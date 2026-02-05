@@ -25,6 +25,10 @@ export const TerminalServerEvents = {
   OUTPUT: 'terminal:output',
   EXIT: 'terminal:exit',
   ERROR: 'terminal:error',
+  /** 标准化日志 JSON Patch */
+  PATCH: 'terminal:patch',
+  /** Agent 内部 session ID */
+  SESSION_ID: 'terminal:session_id',
 } as const
 
 // ============ Agents 命名空间事件 ============
@@ -74,6 +78,26 @@ export interface TerminalExitPayload {
 export interface TerminalErrorPayload {
   sessionId: string
   message: string
+}
+
+/** JSON Patch 操作 */
+export interface JsonPatchOperation {
+  op: 'add' | 'remove' | 'replace' | 'move' | 'copy' | 'test'
+  path: string
+  value?: unknown
+  from?: string
+}
+
+/** 标准化日志 Patch payload */
+export interface TerminalPatchPayload {
+  sessionId: string
+  patch: JsonPatchOperation[]
+}
+
+/** Agent 内部 session ID payload */
+export interface TerminalSessionIdPayload {
+  sessionId: string
+  agentSessionId: string
 }
 
 // Agent payloads

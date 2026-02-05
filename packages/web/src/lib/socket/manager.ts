@@ -12,7 +12,8 @@ class SocketManager {
   private baseUrl: string
 
   constructor() {
-    this.baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000'
+    // 开发环境使用相对路径，通过 Vite 代理；生产环境使用环境变量
+    this.baseUrl = import.meta.env.VITE_SOCKET_URL || ''
   }
 
   /**

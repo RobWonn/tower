@@ -4,6 +4,7 @@ import { RootLayout } from '@/layouts/RootLayout'
 
 // Lazy load pages for bundle optimization (bundle-dynamic-imports)
 const HomePage = lazy(() => import('@/pages/HomePage').then(m => ({ default: m.HomePage })))
+const DemoPage = lazy(() => import('@/pages/DemoPage').then(m => ({ default: m.DemoPage })))
 
 const router = createBrowserRouter([
   {
@@ -15,6 +16,14 @@ const router = createBrowserRouter([
         element: (
           <Suspense fallback={<div className="p-8">Loading...</div>}>
             <HomePage />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'demo',
+        element: (
+          <Suspense fallback={<div className="p-8">Loading...</div>}>
+            <DemoPage />
           </Suspense>
         ),
       },

@@ -1,6 +1,7 @@
 import type { Namespace, Socket } from 'socket.io'
 import type { SocketHandler } from './base.handler.js'
 import { ProcessManager } from '../../process/process.manager.js'
+import { sessionMsgStoreManager } from '../../logs/index.js'
 import {
   TerminalClientEvents,
   TerminalServerEvents,
@@ -104,7 +105,39 @@ export class TerminalHandler implements SocketHandler {
         })
       })
 
+      // 订阅标准化日志流
+      const msgStore = sessionMsgStoreManager.get(sessionId)
+      let patchStreamAborted = false
+
+      if (msgStore) {
+        // 启动异步流处理
+        ;(async () => {
+          try {
+            for await (const msg of msgStore.normalizedLogsStream()) {
+              if (patchStreamAborted) break
+
+              if (msg.type === 'patch') {
+                nsp.to(`terminal:${sessionId}`).emit(TerminalServerEvents.PATCH, {
+                  sessionId,
+                  patch: msg.patch,
+                })
+              } else if (msg.type === 'session_id') {
+                nsp.to(`terminal:${sessionId}`).emit(TerminalServerEvents.SESSION_ID, {
+                  sessionId,
+                  agentSessionId: msg.id,
+                })
+              }
+            }
+          } catch (err) {
+            if (!patchStreamAborted) {
+              console.error(`[Terminal] Patch stream error for session ${sessionId}:`, err)
+            }
+          }
+        })()
+      }
+
       disposers.set(sessionId, () => {
+        patchStreamAborted = true
         onData.dispose()
         onExit.dispose()
       })
