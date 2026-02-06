@@ -1,0 +1,214 @@
+import { useState } from 'react'
+import { ChevronDown, Plus, Layers, Check } from 'lucide-react'
+import { TaskGroup } from './TaskGroup'
+import type { Task, Project } from './types'
+import { TaskStatus } from './types'
+import { MOCK_PROJECTS, MOCK_TASKS } from './mock-data'
+
+interface TaskListProps {
+  tasks?: Task[]
+  projects?: Project[]
+  selectedTaskId: string | null
+  onSelectTask: (id: string) => void
+  filterProjectId: string | null
+  setFilterProjectId: (id: string | null) => void
+  width?: number
+  onCreateProject?: () => void
+  onCreateTask?: () => void
+}
+
+/** 空状态 placeholder - 提升到组件外避免重复创建 */
+const EmptyFooter = (
+  <div className="p-4 border-t border-neutral-100 text-xs text-neutral-400 flex items-center justify-between">
+    <span>0 tasks</span>
+  </div>
+)
+
+/**
+ * 单次遍历将任务按状态分组
+ * 避免多次 filter 遍历
+ */
+function groupTasksByStatus(tasks: Task[]) {
+  const groups: Record<TaskStatus, Task[]> = {
+    [TaskStatus.Review]: [],
+    [TaskStatus.Running]: [],
+    [TaskStatus.Pending]: [],
+    [TaskStatus.Done]: [],
+  }
+
+  for (const task of tasks) {
+    groups[task.status].push(task)
+  }
+
+  return groups
+}
+
+/** 任务分组展示顺序配置 */
+const TASK_GROUP_CONFIG = [
+  { status: TaskStatus.Review, title: 'Review', defaultOpen: true },
+  { status: TaskStatus.Running, title: 'Running', defaultOpen: true },
+  { status: TaskStatus.Pending, title: 'Pending', defaultOpen: false },
+  { status: TaskStatus.Done, title: 'Done', defaultOpen: false },
+] as const
+
+export function TaskList({
+  tasks = MOCK_TASKS,
+  projects = MOCK_PROJECTS,
+  selectedTaskId,
+  onSelectTask,
+  filterProjectId,
+  setFilterProjectId,
+  width = 320,
+  onCreateProject,
+  onCreateTask,
+}: TaskListProps) {
+  const [isFilterOpen, setIsFilterOpen] = useState(false)
+
+  // 直接在 render 中计算派生状态，不使用 useEffect
+  const filteredTasks = filterProjectId
+    ? tasks.filter(t => t.projectId === filterProjectId)
+    : tasks
+
+  const currentProject = filterProjectId
+    ? projects.find(p => p.id === filterProjectId) ?? null
+    : null
+
+  // 单次遍历分组
+  const grouped = groupTasksByStatus(filteredTasks)
+
+  return (
+    <div
+      className="h-full flex flex-col bg-white border-r border-neutral-200 flex-shrink-0"
+      style={{ width }}
+    >
+      {/* Header: 项目筛选下拉 */}
+      <div className="h-14 flex items-center justify-between px-3 border-b border-neutral-100 flex-shrink-0 relative z-20">
+        <div className="relative flex-1 mr-2">
+          <button
+            onClick={() => setIsFilterOpen(prev => !prev)}
+            className="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm font-semibold text-neutral-900 hover:bg-neutral-100 transition-colors w-full text-left group"
+          >
+            {filterProjectId && currentProject ? (
+              <>
+                <span className={`w-2 h-2 rounded-full flex-shrink-0 ${currentProject.color.replace('text-', 'bg-')}`} />
+                <span className="truncate">{currentProject.name}</span>
+              </>
+            ) : (
+              <>
+                <Layers size={16} className="text-neutral-500 group-hover:text-neutral-800" />
+                <span>All Projects</span>
+              </>
+            )}
+            <ChevronDown
+              size={14}
+              className={`text-neutral-400 ml-auto transition-transform duration-200 ${isFilterOpen ? 'rotate-180' : ''}`}
+            />
+          </button>
+
+          {/* 下拉菜单 */}
+          {isFilterOpen ? (
+            <>
+              {/* Backdrop */}
+              <div className="fixed inset-0 z-30" onClick={() => setIsFilterOpen(false)} />
+
+              {/* Menu */}
+              <div className="absolute left-0 top-full mt-1 w-56 bg-white border border-neutral-200 rounded-lg shadow-xl shadow-neutral-200/50 z-40 py-1 animate-in fade-in zoom-in-95 duration-100 origin-top-left">
+                <div className="px-3 py-2 text-[10px] font-semibold text-neutral-400 uppercase tracking-wider">
+                  Select View
+                </div>
+
+                <button
+                  onClick={() => { setFilterProjectId(null); setIsFilterOpen(false) }}
+                  className="w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-neutral-50 transition-colors group"
+                >
+                  <div className="flex items-center gap-2">
+                    <div className="w-5 h-5 flex items-center justify-center rounded border border-neutral-200 bg-neutral-50 text-neutral-500 group-hover:border-neutral-300">
+                      <Layers size={12} />
+                    </div>
+                    <span className={filterProjectId === null ? 'text-neutral-900 font-medium' : 'text-neutral-600'}>
+                      All Projects
+                    </span>
+                  </div>
+                  {filterProjectId === null ? <Check size={14} className="text-neutral-900" /> : null}
+                </button>
+
+                <div className="h-px bg-neutral-100 my-1 mx-2" />
+
+                {projects.map(p => {
+                  const isActive = filterProjectId === p.id
+                  const bgClass = p.color.replace('text-', 'bg-')
+
+                  return (
+                    <button
+                      key={p.id}
+                      onClick={() => { setFilterProjectId(p.id); setIsFilterOpen(false) }}
+                      className="w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-neutral-50 transition-colors"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className={`w-2 h-2 rounded-full ml-1.5 mr-1.5 ${bgClass}`} />
+                        <span className={isActive ? 'text-neutral-900 font-medium' : 'text-neutral-600'}>
+                          {p.name}
+                        </span>
+                      </div>
+                      {isActive ? <Check size={14} className="text-neutral-900" /> : null}
+                    </button>
+                  )
+                })}
+
+                <div className="h-px bg-neutral-100 my-1 mx-2" />
+
+                {/* 创建项目入口 */}
+                <button
+                  onClick={() => { setIsFilterOpen(false); onCreateProject?.() }}
+                  className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 text-neutral-500 hover:text-neutral-900 hover:bg-neutral-50 transition-colors"
+                >
+                  <Plus size={14} />
+                  <span>Create New Project...</span>
+                </button>
+              </div>
+            </>
+          ) : null}
+        </div>
+
+        <button
+          onClick={onCreateTask}
+          className="p-1.5 text-neutral-400 hover:text-neutral-900 hover:bg-neutral-100 rounded-md transition-colors flex-shrink-0"
+          title="New Task"
+        >
+          <Plus size={18} />
+        </button>
+      </div>
+
+      {/* 任务分组列表 */}
+      <div className="flex-1 overflow-y-auto py-4">
+        {TASK_GROUP_CONFIG.map(({ status, title, defaultOpen }) => (
+          <TaskGroup
+            key={status}
+            title={title}
+            tasks={grouped[status]}
+            status={status}
+            defaultOpen={defaultOpen}
+            selectedTaskId={selectedTaskId}
+            onSelectTask={onSelectTask}
+            projects={projects}
+          />
+        ))}
+      </div>
+
+      {/* Footer */}
+      {filteredTasks.length > 0 ? (
+        <div className="p-4 border-t border-neutral-100 text-xs text-neutral-400 flex items-center justify-between">
+          <span>{filteredTasks.length} tasks</span>
+          {filterProjectId ? (
+            <button
+              onClick={() => setFilterProjectId(null)}
+              className="hover:text-neutral-800 underline decoration-neutral-300 underline-offset-2"
+            >
+              Clear filter
+            </button>
+          ) : null}
+        </div>
+      ) : EmptyFooter}
+    </div>
+  )
+}
