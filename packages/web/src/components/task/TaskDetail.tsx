@@ -1,14 +1,21 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { type LogEntry, LogType } from '@agent-tower/shared/log-adapter'
 import { LogStream } from '@/components/agent'
 import { IconRunning, IconReview, IconPending, IconDone } from '@/components/agent'
-import { Paperclip, ArrowUp } from 'lucide-react'
+import { Paperclip, ArrowUp, PanelRightClose, PanelRightOpen } from 'lucide-react'
+import { WorkspacePanel } from '@/components/workspace/WorkspacePanel'
 import type { UITaskDetailData } from './types'
 import { UITaskStatus } from './types'
 
 interface TaskDetailProps {
   task: UITaskDetailData | null
 }
+
+// ============ Layout Constants ============
+
+const CHAT_WIDTH_DEFAULT = 675
+const CHAT_WIDTH_MIN = 320
+const CHAT_WIDTH_MAX = 1200
 
 // ============ Mock Data ============
 
@@ -139,6 +146,68 @@ export function TaskDetail({ task }: TaskDetailProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
 
+  // Layout state
+  const [chatWidth, setChatWidth] = useState(CHAT_WIDTH_DEFAULT)
+  const [isWorkspaceOpen, setIsWorkspaceOpen] = useState(true)
+  const [isResizing, setIsResizing] = useState(false)
+
+  // Transient refs for resize — avoid re-renders during drag (rerender-use-ref-transient-values)
+  const startXRef = useRef<number>(0)
+  const startWidthRef = useRef<number>(0)
+  const chatPanelRef = useRef<HTMLDivElement>(null)
+
+  // Resize event handlers (useCallback)
+  const handleMouseMove = useCallback((e: MouseEvent) => {
+    const deltaX = e.clientX - startXRef.current
+    const newWidth = Math.max(CHAT_WIDTH_MIN, Math.min(startWidthRef.current + deltaX, CHAT_WIDTH_MAX))
+    // Write directly to DOM via ref for smooth drag — no re-render until mouseup
+    if (chatPanelRef.current) {
+      chatPanelRef.current.style.width = `${newWidth}px`
+    }
+    // Store latest value in ref for mouseup to commit
+    startWidthRef.current = startWidthRef.current // keep original start for delta calc
+  }, [])
+
+  const handleMouseUp = useCallback(() => {
+    setIsResizing(false)
+    // Commit final width from DOM to state
+    if (chatPanelRef.current) {
+      const finalWidth = chatPanelRef.current.getBoundingClientRect().width
+      setChatWidth(Math.max(CHAT_WIDTH_MIN, Math.min(Math.round(finalWidth), CHAT_WIDTH_MAX)))
+    }
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+  }, [])
+
+  // Attach/detach global listeners when resizing
+  useEffect(() => {
+    if (!isResizing) return
+
+    document.addEventListener('mousemove', handleMouseMove)
+    document.addEventListener('mouseup', handleMouseUp)
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+    }
+  }, [isResizing, handleMouseMove, handleMouseUp])
+
+  const handleMouseDownResize = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    startXRef.current = e.clientX
+    startWidthRef.current = chatWidth
+    setIsResizing(true)
+  }, [chatWidth])
+
+  // Toggle workspace panel
+  const handleToggleWorkspace = useCallback(() => {
+    setIsWorkspaceOpen((prev) => !prev)
+  }, [])
+
   // textarea auto-resize in onChange handler (not useEffect)
   const handleInput = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInput(e.target.value)
@@ -177,64 +246,102 @@ export function TaskDetail({ task }: TaskDetailProps) {
           <h2 className="text-lg font-bold text-neutral-900">{task.title}</h2>
         </div>
 
-        <StatusBadge status={task.status} />
-      </div>
+        <div className="flex items-center gap-4">
+          <StatusBadge status={task.status} />
 
-      {/* Scrollable Logs */}
-      <div className="flex-1 overflow-y-auto px-6 pt-6 pb-4">
-        <div className="w-full">
-          {/* Task Description */}
-          <div className="mb-8 pb-8 border-b border-neutral-100">
-            <p className="text-sm text-neutral-500 leading-relaxed">{task.description}</p>
-          </div>
-
-          <LogStream logs={task.logs} />
-          <div ref={bottomRef} className="h-4" />
+          {/* Toggle Workspace */}
+          <button
+            onClick={handleToggleWorkspace}
+            className="text-neutral-400 hover:text-neutral-900 transition-colors"
+            title="Toggle Workspace"
+          >
+            {isWorkspaceOpen ? <PanelRightClose size={20} /> : <PanelRightOpen size={20} />}
+          </button>
         </div>
       </div>
 
-      {/* Input Area */}
-      <div className="p-6 pt-4 bg-white flex-shrink-0 w-full z-10 pb-6 border-t border-transparent">
-        <div className="relative bg-white rounded-xl border border-neutral-200 shadow-sm hover:shadow-md focus-within:shadow-md focus-within:border-neutral-300 transition-all duration-200">
-          <textarea
-            ref={textareaRef}
-            value={input}
-            onChange={handleInput}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault()
-                handleSend()
-              }
-            }}
-            rows={1}
-            placeholder="Message Agent..."
-            className="w-full px-4 pt-4 pb-2 bg-transparent border-none focus:outline-none resize-none text-sm text-neutral-900 placeholder-neutral-400 leading-relaxed"
-            style={{ minHeight: '60px', maxHeight: '300px' }}
+      {/* Main Area — two-column layout */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Chat Panel (LogStream + Input) */}
+        <div
+          ref={chatPanelRef}
+          className={`flex flex-col bg-white relative ${
+            isWorkspaceOpen ? 'flex-shrink-0' : 'flex-1'
+          }`}
+          style={{ width: isWorkspaceOpen ? chatWidth : '100%' }}
+        >
+          {/* Scrollable Logs */}
+          <div className="flex-1 overflow-y-auto px-6 pt-6 pb-4">
+            <div className="w-full">
+              {/* Task Description */}
+              <div className="mb-8 pb-8 border-b border-neutral-100">
+                <p className="text-sm text-neutral-500 leading-relaxed">{task.description}</p>
+              </div>
+
+              <LogStream logs={task.logs} />
+              <div ref={bottomRef} className="h-4" />
+            </div>
+          </div>
+
+          {/* Input Area */}
+          <div className="p-6 pt-4 bg-white flex-shrink-0 w-full z-10 pb-6 border-t border-transparent">
+            <div className="relative bg-white rounded-xl border border-neutral-200 shadow-sm hover:shadow-md focus-within:shadow-md focus-within:border-neutral-300 transition-all duration-200">
+              <textarea
+                ref={textareaRef}
+                value={input}
+                onChange={handleInput}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault()
+                    handleSend()
+                  }
+                }}
+                rows={1}
+                placeholder="Message Agent..."
+                className="w-full px-4 pt-4 pb-2 bg-transparent border-none focus:outline-none resize-none text-sm text-neutral-900 placeholder-neutral-400 leading-relaxed"
+                style={{ minHeight: '60px', maxHeight: '300px' }}
+              />
+
+              {/* Toolbar Row */}
+              <div className="flex items-center justify-between px-2 pb-2 pt-1">
+                <div className="flex items-center gap-1">
+                  <button className="p-2 text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 rounded-lg transition-colors">
+                    <Paperclip size={18} />
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleSend}
+                    disabled={!input.trim()}
+                    className={`p-2 rounded-lg transition-all duration-200 ${
+                      input.trim()
+                        ? 'bg-neutral-900 text-white shadow-md hover:bg-black'
+                        : 'bg-transparent text-neutral-300 cursor-not-allowed'
+                    }`}
+                  >
+                    <ArrowUp size={18} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Resizer — only visible when WorkspacePanel is open */}
+        {isWorkspaceOpen && (
+          <div
+            className="w-1 cursor-col-resize hover:bg-neutral-200 active:bg-blue-400 transition-colors z-30 flex-shrink-0"
+            onMouseDown={handleMouseDownResize}
           />
+        )}
 
-          {/* Toolbar Row */}
-          <div className="flex items-center justify-between px-2 pb-2 pt-1">
-            <div className="flex items-center gap-1">
-              <button className="p-2 text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 rounded-lg transition-colors">
-                <Paperclip size={18} />
-              </button>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleSend}
-                disabled={!input.trim()}
-                className={`p-2 rounded-lg transition-all duration-200 ${
-                  input.trim()
-                    ? 'bg-neutral-900 text-white shadow-md hover:bg-black'
-                    : 'bg-transparent text-neutral-300 cursor-not-allowed'
-                }`}
-              >
-                <ArrowUp size={18} />
-              </button>
-            </div>
+        {/* Right: WorkspacePanel — takes remaining space */}
+        {isWorkspaceOpen && (
+          <div className="flex-1 flex flex-col min-w-0 bg-white">
+            <WorkspacePanel branch={task.branch} />
           </div>
-        </div>
+        )}
       </div>
     </div>
   )
