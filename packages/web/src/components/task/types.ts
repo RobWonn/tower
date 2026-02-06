@@ -3,12 +3,14 @@
  * 临时本地类型，后续迁移到 @agent-tower/shared
  */
 
-export enum TaskStatus {
-  Review = 'Review',
-  Running = 'Running',
-  Pending = 'Pending',
-  Done = 'Done',
-}
+export const TaskStatus = {
+  Review: 'Review',
+  Running: 'Running',
+  Pending: 'Pending',
+  Done: 'Done',
+} as const
+
+export type TaskStatus = (typeof TaskStatus)[keyof typeof TaskStatus]
 
 export interface Project {
   id: string

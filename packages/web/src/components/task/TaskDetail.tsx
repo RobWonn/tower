@@ -3,17 +3,11 @@ import { type LogEntry, LogType } from '@agent-tower/shared/log-adapter'
 import { LogStream } from '@/components/agent'
 import { IconRunning, IconReview, IconPending, IconDone } from '@/components/agent'
 import { Paperclip, ArrowUp } from 'lucide-react'
+import { TaskStatus } from './types'
 
 // ============ Types ============
 
-enum TaskStatus {
-  Running = 'Running',
-  Review = 'Review',
-  Pending = 'Pending',
-  Done = 'Done',
-}
-
-interface TaskDetailData {
+export interface TaskDetailData {
   id: string
   projectName: string
   projectColor: string
