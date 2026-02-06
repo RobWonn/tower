@@ -1,65 +1,101 @@
 import type { FastifyInstance } from 'fastify';
-import { z } from 'zod';
+import { z, ZodError } from 'zod';
 import { ProjectService } from '../services/project.service.js';
+import { ServiceError } from '../errors.js';
 
 const createProjectSchema = z.object({
-  name: z.string().min(1),
+  name: z.string().min(1, 'name is required'),
   description: z.string().optional(),
-  repoPath: z.string().min(1),
+  repoPath: z.string().min(1, 'repoPath is required'),
   mainBranch: z.string().default('main'),
 });
 
 const updateProjectSchema = z.object({
-  name: z.string().min(1).optional(),
+  name: z.string().min(1, 'name cannot be empty').optional(),
   description: z.string().optional(),
   mainBranch: z.string().optional(),
 });
 
+const paginationSchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+});
+
+/**
+ * 统一错误处理：将 ServiceError / ZodError 转为结构化响应
+ */
+function handleError(error: unknown, reply: any) {
+  if (error instanceof ZodError) {
+    const fieldErrors = error.errors.map((e) => ({
+      field: e.path.join('.'),
+      message: e.message,
+    }));
+    reply.code(400);
+    return { error: 'Validation failed', code: 'VALIDATION_ERROR', details: fieldErrors };
+  }
+
+  if (error instanceof ServiceError) {
+    reply.code(error.statusCode);
+    return { error: error.message, code: error.code };
+  }
+
+  // 未知错误
+  reply.code(500);
+  return { error: 'Internal server error', code: 'INTERNAL_ERROR' };
+}
+
 export async function projectRoutes(app: FastifyInstance) {
   const projectService = new ProjectService();
 
-  // 获取项目列表
-  app.get('/', async () => {
-    return projectService.findAll();
+  // 获取项目列表（支持分页）
+  app.get('/', async (request, reply) => {
+    try {
+      const query = paginationSchema.parse(request.query);
+      return await projectService.findAll(query);
+    } catch (error) {
+      return handleError(error, reply);
+    }
   });
 
   // 创建项目
   app.post('/', async (request, reply) => {
-    const body = createProjectSchema.parse(request.body);
-    const project = await projectService.create(body);
-    reply.code(201);
-    return project;
+    try {
+      const body = createProjectSchema.parse(request.body);
+      const project = await projectService.create(body);
+      reply.code(201);
+      return project;
+    } catch (error) {
+      return handleError(error, reply);
+    }
   });
 
-  // 获取项目详情
+  // 获取项目详情（含任务统计）
   app.get<{ Params: { id: string } }>('/:id', async (request, reply) => {
-    const project = await projectService.findById(request.params.id);
-    if (!project) {
-      reply.code(404);
-      return { error: 'Project not found' };
+    try {
+      return await projectService.findById(request.params.id);
+    } catch (error) {
+      return handleError(error, reply);
     }
-    return project;
   });
 
   // 更新项目
   app.put<{ Params: { id: string } }>('/:id', async (request, reply) => {
-    const body = updateProjectSchema.parse(request.body);
-    const project = await projectService.update(request.params.id, body);
-    if (!project) {
-      reply.code(404);
-      return { error: 'Project not found' };
+    try {
+      const body = updateProjectSchema.parse(request.body);
+      return await projectService.update(request.params.id, body);
+    } catch (error) {
+      return handleError(error, reply);
     }
-    return project;
   });
 
   // 删除项目
   app.delete<{ Params: { id: string } }>('/:id', async (request, reply) => {
-    const deleted = await projectService.delete(request.params.id);
-    if (!deleted) {
-      reply.code(404);
-      return { error: 'Project not found' };
+    try {
+      await projectService.delete(request.params.id);
+      reply.code(204);
+      return;
+    } catch (error) {
+      return handleError(error, reply);
     }
-    reply.code(204);
-    return;
   });
 }

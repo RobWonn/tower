@@ -1,37 +1,76 @@
 import type { FastifyInstance } from 'fastify';
-import { z } from 'zod';
+import { z, ZodError } from 'zod';
 import { TaskService } from '../services/task.service.js';
 import { TaskStatus } from '../types/index.js';
+import { ServiceError } from '../errors.js';
 
 const createTaskSchema = z.object({
-  title: z.string().min(1),
+  title: z.string().min(1, 'title is required'),
   description: z.string().optional(),
-  priority: z.number().default(0),
+  priority: z.number().int().min(0).default(0),
 });
 
 const updateTaskSchema = z.object({
-  title: z.string().min(1).optional(),
+  title: z.string().min(1, 'title cannot be empty').optional(),
   description: z.string().optional(),
-  priority: z.number().optional(),
+  priority: z.number().int().min(0).optional(),
 });
 
 const updateStatusSchema = z.object({
-  status: z.nativeEnum(TaskStatus),
+  status: z.nativeEnum(TaskStatus, {
+    errorMap: () => ({
+      message: `status must be one of: ${Object.values(TaskStatus).join(', ')}`,
+    }),
+  }),
 });
 
 const updatePositionSchema = z.object({
-  position: z.number(),
+  position: z.number().int().min(0, 'position must be non-negative'),
   status: z.nativeEnum(TaskStatus).optional(),
 });
+
+const taskListQuerySchema = z.object({
+  status: z.nativeEnum(TaskStatus).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+});
+
+/**
+ * 统一错误处理：将 ServiceError / ZodError 转为结构化响应
+ */
+function handleError(error: unknown, reply: any) {
+  if (error instanceof ZodError) {
+    const fieldErrors = error.errors.map((e) => ({
+      field: e.path.join('.'),
+      message: e.message,
+    }));
+    reply.code(400);
+    return { error: 'Validation failed', code: 'VALIDATION_ERROR', details: fieldErrors };
+  }
+
+  if (error instanceof ServiceError) {
+    reply.code(error.statusCode);
+    return { error: error.message, code: error.code };
+  }
+
+  // 未知错误
+  reply.code(500);
+  return { error: 'Internal server error', code: 'INTERNAL_ERROR' };
+}
 
 export async function taskRoutes(app: FastifyInstance) {
   const taskService = new TaskService();
 
-  // 获取项目的任务列表
+  // 获取项目的任务列表（支持分页和状态过滤）
   app.get<{ Params: { projectId: string } }>(
     '/projects/:projectId/tasks',
-    async (request) => {
-      return taskService.findByProjectId(request.params.projectId);
+    async (request, reply) => {
+      try {
+        const query = taskListQuerySchema.parse(request.query);
+        return await taskService.findByProjectId(request.params.projectId, query);
+      } catch (error) {
+        return handleError(error, reply);
+      }
     }
   );
 
@@ -39,45 +78,58 @@ export async function taskRoutes(app: FastifyInstance) {
   app.post<{ Params: { projectId: string } }>(
     '/projects/:projectId/tasks',
     async (request, reply) => {
-      const body = createTaskSchema.parse(request.body);
-      const task = await taskService.create(request.params.projectId, body);
-      reply.code(201);
-      return task;
+      try {
+        const body = createTaskSchema.parse(request.body);
+        const task = await taskService.create(request.params.projectId, body);
+        reply.code(201);
+        return task;
+      } catch (error) {
+        return handleError(error, reply);
+      }
+    }
+  );
+
+  // 获取项目的任务统计
+  app.get<{ Params: { projectId: string } }>(
+    '/projects/:projectId/tasks/stats',
+    async (request, reply) => {
+      try {
+        return await taskService.getStatsByProjectId(request.params.projectId);
+      } catch (error) {
+        return handleError(error, reply);
+      }
     }
   );
 
   // 获取任务详情
   app.get<{ Params: { id: string } }>('/tasks/:id', async (request, reply) => {
-    const task = await taskService.findById(request.params.id);
-    if (!task) {
-      reply.code(404);
-      return { error: 'Task not found' };
+    try {
+      return await taskService.findById(request.params.id);
+    } catch (error) {
+      return handleError(error, reply);
     }
-    return task;
   });
 
   // 更新任务
   app.put<{ Params: { id: string } }>('/tasks/:id', async (request, reply) => {
-    const body = updateTaskSchema.parse(request.body);
-    const task = await taskService.update(request.params.id, body);
-    if (!task) {
-      reply.code(404);
-      return { error: 'Task not found' };
+    try {
+      const body = updateTaskSchema.parse(request.body);
+      return await taskService.update(request.params.id, body);
+    } catch (error) {
+      return handleError(error, reply);
     }
-    return task;
   });
 
-  // 更新任务状态
+  // 更新任务状态（含状态流转校验）
   app.patch<{ Params: { id: string } }>(
     '/tasks/:id/status',
     async (request, reply) => {
-      const body = updateStatusSchema.parse(request.body);
-      const task = await taskService.updateStatus(request.params.id, body.status);
-      if (!task) {
-        reply.code(404);
-        return { error: 'Task not found' };
+      try {
+        const body = updateStatusSchema.parse(request.body);
+        return await taskService.updateStatus(request.params.id, body.status);
+      } catch (error) {
+        return handleError(error, reply);
       }
-      return task;
     }
   );
 
@@ -85,17 +137,16 @@ export async function taskRoutes(app: FastifyInstance) {
   app.patch<{ Params: { id: string } }>(
     '/tasks/:id/position',
     async (request, reply) => {
-      const body = updatePositionSchema.parse(request.body);
-      const task = await taskService.updatePosition(
-        request.params.id,
-        body.position,
-        body.status
-      );
-      if (!task) {
-        reply.code(404);
-        return { error: 'Task not found' };
+      try {
+        const body = updatePositionSchema.parse(request.body);
+        return await taskService.updatePosition(
+          request.params.id,
+          body.position,
+          body.status
+        );
+      } catch (error) {
+        return handleError(error, reply);
       }
-      return task;
     }
   );
 
@@ -103,13 +154,13 @@ export async function taskRoutes(app: FastifyInstance) {
   app.delete<{ Params: { id: string } }>(
     '/tasks/:id',
     async (request, reply) => {
-      const deleted = await taskService.delete(request.params.id);
-      if (!deleted) {
-        reply.code(404);
-        return { error: 'Task not found' };
+      try {
+        await taskService.delete(request.params.id);
+        reply.code(204);
+        return;
+      } catch (error) {
+        return handleError(error, reply);
       }
-      reply.code(204);
-      return;
     }
   );
 }
