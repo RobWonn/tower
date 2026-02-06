@@ -1,15 +1,52 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { WorkspaceService } from '../services/workspace.service.js';
+import { ServiceError, NotFoundError } from '../errors.js';
+import { GitError } from '../git/worktree.manager.js';
 
 const createWorkspaceSchema = z.object({
   branchName: z.string().min(1).optional(),
 });
 
+/**
+ * 统一错误响应格式
+ */
+function errorResponse(error: string, code: string) {
+  return { error, code };
+}
+
 export async function workspaceRoutes(app: FastifyInstance) {
   const workspaceService = new WorkspaceService();
 
-  // 创建工作空间
+  // ── 错误处理钩子 ────────────────────────────────────────────────────────────
+
+  app.setErrorHandler((error, _request, reply) => {
+    // ServiceError（业务错误）
+    if (error instanceof ServiceError) {
+      reply.code(error.statusCode);
+      return errorResponse(error.message, error.code);
+    }
+
+    // GitError（Git 操作错误）
+    if (error instanceof GitError) {
+      reply.code(400);
+      return errorResponse(error.message, error.code);
+    }
+
+    // Zod 校验错误
+    if (error.name === 'ZodError') {
+      reply.code(400);
+      return errorResponse(error.message, 'VALIDATION_ERROR');
+    }
+
+    // 未知错误
+    app.log.error(error);
+    reply.code(500);
+    return errorResponse('Internal server error', 'INTERNAL_ERROR');
+  });
+
+  // ── 创建工作空间 ────────────────────────────────────────────────────────────
+
   app.post<{ Params: { taskId: string } }>(
     '/tasks/:taskId/workspaces',
     async (request, reply) => {
@@ -23,56 +60,74 @@ export async function workspaceRoutes(app: FastifyInstance) {
     }
   );
 
-  // 获取工作空间详情
+  // ── 获取 Task 下所有 Workspace ──────────────────────────────────────────────
+
+  app.get<{ Params: { taskId: string } }>(
+    '/tasks/:taskId/workspaces',
+    async (request) => {
+      return workspaceService.findByTaskId(request.params.taskId);
+    }
+  );
+
+  // ── 获取工作空间详情 ────────────────────────────────────────────────────────
+
   app.get<{ Params: { id: string } }>(
     '/workspaces/:id',
     async (request, reply) => {
       const workspace = await workspaceService.findById(request.params.id);
       if (!workspace) {
         reply.code(404);
-        return { error: 'Workspace not found' };
+        return errorResponse('Workspace not found', 'NOT_FOUND');
       }
       return workspace;
     }
   );
 
-  // 获取工作空间的 diff
+  // ── 获取工作空间的 diff ──────────────────────────────────────────────────────
+
   app.get<{ Params: { id: string } }>(
     '/workspaces/:id/diff',
-    async (request, reply) => {
+    async (request) => {
       const diff = await workspaceService.getDiff(request.params.id);
-      if (diff === null) {
-        reply.code(404);
-        return { error: 'Workspace not found' };
-      }
       return { diff };
     }
   );
 
-  // 合并工作空间到主分支
+  // ── 合并工作空间到主分支 ────────────────────────────────────────────────────
+
   app.post<{ Params: { id: string } }>(
     '/workspaces/:id/merge',
-    async (request, reply) => {
-      const result = await workspaceService.merge(request.params.id);
-      if (!result) {
-        reply.code(404);
-        return { error: 'Workspace not found' };
-      }
-      return { success: true };
+    async (request) => {
+      const sha = await workspaceService.merge(request.params.id);
+      return { success: true, sha };
     }
   );
 
-  // 删除工作空间
+  // ── 归档工作空间 ────────────────────────────────────────────────────────────
+
+  app.post<{ Params: { id: string } }>(
+    '/workspaces/:id/archive',
+    async (request) => {
+      const workspace = await workspaceService.archive(request.params.id);
+      return workspace;
+    }
+  );
+
+  // ── 删除工作空间 ────────────────────────────────────────────────────────────
+
   app.delete<{ Params: { id: string } }>(
     '/workspaces/:id',
     async (request, reply) => {
-      const deleted = await workspaceService.delete(request.params.id);
-      if (!deleted) {
-        reply.code(404);
-        return { error: 'Workspace not found' };
-      }
+      await workspaceService.delete(request.params.id);
       reply.code(204);
       return;
     }
   );
+
+  // ── 系统清理 ────────────────────────────────────────────────────────────────
+
+  app.post('/system/cleanup', async () => {
+    const cleaned = await workspaceService.cleanup();
+    return { success: true, cleaned };
+  });
 }

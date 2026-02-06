@@ -2,6 +2,7 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import { registerRoutes } from './routes/index.js';
 import { initializeSocket, closeSocket } from './socket/index.js';
+import { WorkspaceService } from './services/workspace.service.js';
 
 export async function buildApp() {
   const app = Fastify({
@@ -18,9 +19,14 @@ export async function buildApp() {
   // 注册路由
   await registerRoutes(app);
 
-  // 服务器启动后初始化 Socket.IO
+  // 服务器启动后初始化 Socket.IO 并清理过期 worktree
   app.addHook('onReady', async () => {
     initializeSocket(app);
+
+    // 启动时清理过期 worktree 引用
+    WorkspaceService.pruneAllWorktrees().catch((err) => {
+      app.log.warn(`Worktree prune on startup failed: ${err instanceof Error ? err.message : err}`);
+    });
   });
 
   // 服务器关闭时清理 Socket.IO
