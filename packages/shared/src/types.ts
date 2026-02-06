@@ -44,6 +44,10 @@ export interface Project {
   name: string
   color: string
   description?: string
+  /** 仓库路径 (对应 Prisma repoPath) */
+  repoPath: string
+  /** 主分支名称，默认 "main" */
+  mainBranch: string
   createdAt?: string
   updatedAt?: string
 }
@@ -53,10 +57,14 @@ export interface Task {
   id: string
   projectId: string
   title: string
-  description: string
+  description?: string
   status: TaskStatus
-  agent?: string
-  branch?: string
+  /** 优先级 (对应 Prisma priority) */
+  priority?: number
+  /** 排序位置 (对应 Prisma position) */
+  position?: number
+  /** 关联的工作空间列表（API include 时返回） */
+  workspaces?: Workspace[]
   createdAt?: string
   updatedAt?: string
 }
@@ -65,8 +73,13 @@ export interface Task {
 export interface Workspace {
   id: string
   taskId: string
-  branch: string
+  /** 分支名称 (对应 Prisma branchName) */
+  branchName: string
+  /** worktree 路径 (对应 Prisma worktreePath) */
+  worktreePath: string
   status: WorkspaceStatus
+  /** 关联的会话列表（API include 时返回） */
+  sessions?: Session[]
   createdAt?: string
   updatedAt?: string
 }

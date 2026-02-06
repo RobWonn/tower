@@ -1,13 +1,13 @@
 import { useState } from 'react'
 import { ChevronDown, Plus, Layers, Check } from 'lucide-react'
 import { TaskGroup } from './TaskGroup'
-import type { Task, Project } from './types'
-import { TaskStatus } from './types'
+import type { UITask, UIProject } from './types'
+import { UITaskStatus } from './types'
 import { MOCK_PROJECTS, MOCK_TASKS } from './mock-data'
 
 interface TaskListProps {
-  tasks?: Task[]
-  projects?: Project[]
+  tasks?: UITask[]
+  projects?: UIProject[]
   selectedTaskId: string | null
   onSelectTask: (id: string) => void
   filterProjectId: string | null
@@ -28,12 +28,12 @@ const EmptyFooter = (
  * 单次遍历将任务按状态分组
  * 避免多次 filter 遍历
  */
-function groupTasksByStatus(tasks: Task[]) {
-  const groups: Record<TaskStatus, Task[]> = {
-    [TaskStatus.Review]: [],
-    [TaskStatus.Running]: [],
-    [TaskStatus.Pending]: [],
-    [TaskStatus.Done]: [],
+function groupTasksByStatus(tasks: UITask[]) {
+  const groups: Record<UITaskStatus, UITask[]> = {
+    [UITaskStatus.Review]: [],
+    [UITaskStatus.Running]: [],
+    [UITaskStatus.Pending]: [],
+    [UITaskStatus.Done]: [],
   }
 
   for (const task of tasks) {
@@ -45,10 +45,10 @@ function groupTasksByStatus(tasks: Task[]) {
 
 /** 任务分组展示顺序配置 */
 const TASK_GROUP_CONFIG = [
-  { status: TaskStatus.Review, title: 'Review', defaultOpen: true },
-  { status: TaskStatus.Running, title: 'Running', defaultOpen: true },
-  { status: TaskStatus.Pending, title: 'Pending', defaultOpen: false },
-  { status: TaskStatus.Done, title: 'Done', defaultOpen: false },
+  { status: UITaskStatus.Review, title: 'Review', defaultOpen: true },
+  { status: UITaskStatus.Running, title: 'Running', defaultOpen: true },
+  { status: UITaskStatus.Pending, title: 'Pending', defaultOpen: false },
+  { status: UITaskStatus.Done, title: 'Done', defaultOpen: false },
 ] as const
 
 export function TaskList({

@@ -1,9 +1,9 @@
 import { useState, useCallback, useRef, useEffect, lazy, Suspense } from 'react'
 import { TaskList } from '@/components/task'
 import { TaskDetail, MOCK_TASK } from '@/components/task/TaskDetail'
-import type { TaskDetailData } from '@/components/task/TaskDetail'
+import type { UITaskDetailData } from '@/components/task/types'
 import { MOCK_TASKS, MOCK_PROJECTS } from '@/components/task/mock-data'
-import type { Task } from '@/components/task/types'
+import type { UITask } from '@/components/task/types'
 import { Settings } from 'lucide-react'
 
 // === bundle-dynamic-imports: Modal 组件懒加载 ===
@@ -55,7 +55,7 @@ const DEFAULT_SIDEBAR_WIDTH = 340
  * 根据 task id 查找对应的 TaskDetail 数据
  * 简化映射：使用 mock 数据
  */
-function findTaskDetailData(task: Task | undefined): TaskDetailData | null {
+function findTaskDetailData(task: UITask | undefined): UITaskDetailData | null {
   if (!task) return null
   const project = MOCK_PROJECTS.find(p => p.id === task.projectId)
   return {

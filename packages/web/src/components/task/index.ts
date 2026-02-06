@@ -1,4 +1,6 @@
 export { TaskList } from './TaskList'
 export { TaskGroup } from './TaskGroup'
 export { TaskDetail } from './TaskDetail'
-export type { TaskDetailData } from './TaskDetail'
+export type { UITask, UIProject, UITaskDetailData, UITaskStatus } from './types'
+export { UITaskStatus as UITaskStatusEnum } from './types'
+export { mapTaskStatusToUI, adaptTaskForList, adaptTaskForDetail, adaptProject } from './adapters'

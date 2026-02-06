@@ -3,23 +3,11 @@ import { type LogEntry, LogType } from '@agent-tower/shared/log-adapter'
 import { LogStream } from '@/components/agent'
 import { IconRunning, IconReview, IconPending, IconDone } from '@/components/agent'
 import { Paperclip, ArrowUp } from 'lucide-react'
-import { TaskStatus } from './types'
-
-// ============ Types ============
-
-export interface TaskDetailData {
-  id: string
-  projectName: string
-  projectColor: string
-  title: string
-  status: TaskStatus
-  branch: string
-  description: string
-  logs: LogEntry[]
-}
+import type { UITaskDetailData } from './types'
+import { UITaskStatus } from './types'
 
 interface TaskDetailProps {
-  task: TaskDetailData | null
+  task: UITaskDetailData | null
 }
 
 // ============ Mock Data ============
@@ -61,12 +49,12 @@ const MOCK_LOGS: LogEntry[] = [
   },
 ]
 
-export const MOCK_TASK: TaskDetailData = {
+export const MOCK_TASK: UITaskDetailData = {
   id: 'task-1',
   projectName: 'Agent Tower',
   projectColor: 'text-blue-600',
   title: 'Migrate TaskDetail component to web app',
-  status: TaskStatus.Running,
+  status: UITaskStatus.Running,
   branch: 'feat/task-detail',
   description:
     'Migrate the TaskDetail component from the design prototype into the main web application, integrating with the existing LogStream component and shared types.',
@@ -112,21 +100,21 @@ const EMPTY_STATE = (
 
 // ============ Status Badge Helper ============
 
-function StatusBadge({ status }: { status: TaskStatus }) {
+function StatusBadge({ status }: { status: UITaskStatus }) {
   const config = {
-    [TaskStatus.Running]: {
+    [UITaskStatus.Running]: {
       className: 'bg-blue-50 text-blue-700 border-blue-100',
       icon: <IconRunning className="w-3 h-3 animate-pulse" />,
     },
-    [TaskStatus.Review]: {
+    [UITaskStatus.Review]: {
       className: 'bg-amber-50 text-amber-700 border-amber-100',
       icon: <IconReview className="w-3 h-3" />,
     },
-    [TaskStatus.Pending]: {
+    [UITaskStatus.Pending]: {
       className: 'bg-neutral-50 text-neutral-600 border-neutral-100',
       icon: <IconPending className="w-3 h-3" />,
     },
-    [TaskStatus.Done]: {
+    [UITaskStatus.Done]: {
       className: 'bg-emerald-50 text-emerald-700 border-emerald-100',
       icon: <IconDone className="w-3 h-3" />,
     },

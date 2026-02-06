@@ -1,29 +1,29 @@
 import { memo, useState } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { IconReview, IconRunning, IconPending, IconDone } from '../agent/Icons'
-import type { Task, Project } from './types'
-import { TaskStatus } from './types'
+import type { UITask, UIProject } from './types'
+import { UITaskStatus } from './types'
 
 interface TaskGroupProps {
   title: string
-  tasks: Task[]
-  status: TaskStatus
+  tasks: UITask[]
+  status: UITaskStatus
   defaultOpen: boolean
   selectedTaskId: string | null
   onSelectTask: (id: string) => void
-  projects: Project[]
+  projects: UIProject[]
 }
 
 /** 状态图标映射 */
-const StatusIcon = ({ status, isSelected }: { status: TaskStatus; isSelected?: boolean }) => {
+const StatusIcon = ({ status, isSelected }: { status: UITaskStatus; isSelected?: boolean }) => {
   switch (status) {
-    case TaskStatus.Review:
+    case UITaskStatus.Review:
       return <IconReview className={isSelected ? 'text-amber-600' : 'text-neutral-500'} />
-    case TaskStatus.Running:
+    case UITaskStatus.Running:
       return <IconRunning className="animate-pulse" />
-    case TaskStatus.Pending:
+    case UITaskStatus.Pending:
       return <IconPending />
-    case TaskStatus.Done:
+    case UITaskStatus.Done:
       return <IconDone className="text-neutral-400" />
   }
 }
@@ -44,7 +44,7 @@ export const TaskGroup = memo(function TaskGroup({
 
   if (tasks.length === 0) return EmptyPlaceholder
 
-  const isReview = status === TaskStatus.Review
+  const isReview = status === UITaskStatus.Review
 
   return (
     <div className="mb-2">
@@ -81,7 +81,7 @@ export const TaskGroup = memo(function TaskGroup({
                     : 'border-transparent hover:bg-neutral-50 hover:border-neutral-200'
                   }`}
               >
-                <div className={`mt-0.5 mr-3 flex-shrink-0 ${status === TaskStatus.Running ? 'text-blue-600' : 'text-neutral-500'}`}>
+                <div className={`mt-0.5 mr-3 flex-shrink-0 ${status === UITaskStatus.Running ? 'text-blue-600' : 'text-neutral-500'}`}>
                   <StatusIcon status={status} isSelected={isSelected} />
                 </div>
 
