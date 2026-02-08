@@ -55,17 +55,38 @@ export function formatAgentType(agentType: AgentType): string {
 
 // ============ 实体适配 ============
 
+/** 预定义的项目颜色，用于后端未返回 color 时根据名称 hash 分配 */
+const PROJECT_COLORS = [
+  'text-indigo-600',
+  'text-emerald-600',
+  'text-rose-600',
+  'text-amber-600',
+  'text-cyan-600',
+  'text-violet-600',
+  'text-teal-600',
+  'text-pink-600',
+]
+
+function hashStringToIndex(str: string, max: number): number {
+  let hash = 0
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) - hash + str.charCodeAt(i)) | 0
+  }
+  return Math.abs(hash) % max
+}
+
 /**
  * 将后端 Project 转为 UI 层 Project
  *
  * 丢弃前端不需要的字段（repoPath, mainBranch 等），
  * 保留渲染所需的 id / name / color。
+ * 后端无 color 字段时，根据项目名 hash 分配颜色。
  */
 export function adaptProject(project: SharedProject): UIProject {
   return {
     id: project.id,
     name: project.name,
-    color: project.color,
+    color: project.color || PROJECT_COLORS[hashStringToIndex(project.name, PROJECT_COLORS.length)],
   }
 }
 
@@ -138,7 +159,7 @@ export function adaptTaskForDetail(
   return {
     id: task.id,
     projectName: project.name,
-    projectColor: project.color,
+    projectColor: project.color || PROJECT_COLORS[hashStringToIndex(project.name, PROJECT_COLORS.length)],
     title: task.title,
     status: mapTaskStatusToUI(task.status),
     branch,

@@ -3,7 +3,6 @@ import { ChevronDown, Plus, Layers, Check } from 'lucide-react'
 import { TaskGroup } from './TaskGroup'
 import type { UITask, UIProject } from './types'
 import { UITaskStatus } from './types'
-import { MOCK_PROJECTS, MOCK_TASKS } from './mock-data'
 
 interface TaskListProps {
   tasks?: UITask[]
@@ -52,8 +51,8 @@ const TASK_GROUP_CONFIG = [
 ] as const
 
 export function TaskList({
-  tasks = MOCK_TASKS,
-  projects = MOCK_PROJECTS,
+  tasks = [],
+  projects = [],
   selectedTaskId,
   onSelectTask,
   filterProjectId,

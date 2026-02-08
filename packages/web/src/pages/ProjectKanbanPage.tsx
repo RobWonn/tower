@@ -1,9 +1,14 @@
-import { useState, useCallback, useRef, useEffect, lazy, Suspense } from 'react'
+import { useState, useCallback, useRef, useEffect, useMemo, lazy, Suspense } from 'react'
+import { useQueries } from '@tanstack/react-query'
+import type { Task } from '@agent-tower/shared'
 import { TaskList } from '@/components/task'
 import { TaskDetail } from '@/components/task/TaskDetail'
 import type { UITaskDetailData } from '@/components/task/types'
-import { MOCK_TASKS, MOCK_PROJECTS } from '@/components/task/mock-data'
-import type { UITask } from '@/components/task/types'
+import { adaptProject, adaptTaskForList } from '@/components/task/adapters'
+import { useProjects, useCreateProject } from '@/hooks/use-projects'
+import { useTasks, useCreateTask } from '@/hooks/use-tasks'
+import { apiClient } from '@/lib/api-client'
+import { queryKeys } from '@/hooks/query-keys'
 import { Settings } from 'lucide-react'
 
 // === bundle-dynamic-imports: Modal 组件懒加载 ===
@@ -51,22 +56,12 @@ const MIN_SIDEBAR_WIDTH = 260
 const MAX_SIDEBAR_WIDTH = 600
 const DEFAULT_SIDEBAR_WIDTH = 340
 
-/**
- * 根据 task id 查找对应的 TaskDetail 数据
- * 简化映射：使用 mock 数据
- */
-function findTaskDetailData(task: UITask | undefined): UITaskDetailData | null {
-  if (!task) return null
-  const project = MOCK_PROJECTS.find(p => p.id === task.projectId)
-  return {
-    id: task.id,
-    projectName: project?.name ?? 'Unknown',
-    projectColor: project?.color ?? 'text-neutral-500',
-    title: task.title,
-    status: task.status,
-    branch: task.branch,
-    description: task.description,
-  }
+/** 分页响应类型 */
+interface PaginatedResponse<T> {
+  data: T[]
+  total: number
+  page: number
+  limit: number
 }
 
 export function ProjectKanbanPage() {
@@ -79,7 +74,10 @@ export function ProjectKanbanPage() {
   const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false)
   const [isCreateTaskOpen, setIsCreateTaskOpen] = useState(false)
   const [newProjectName, setNewProjectName] = useState('')
+  const [newProjectRepoPath, setNewProjectRepoPath] = useState('')
   const [newTaskTitle, setNewTaskTitle] = useState('')
+  const [newTaskDescription, setNewTaskDescription] = useState('')
+  const [newTaskProjectId, setNewTaskProjectId] = useState<string>('')
 
   // === rerender-use-ref-transient-values: resize 过程中的 mouse position 使用 ref ===
   const isDraggingRef = useRef(false)
@@ -87,11 +85,67 @@ export function ProjectKanbanPage() {
   const startWidthRef = useRef(DEFAULT_SIDEBAR_WIDTH)
   const containerRef = useRef<HTMLDivElement>(null)
 
-  // === 选中的任务 ===
-  const selectedTask = selectedTaskId
-    ? MOCK_TASKS.find(t => t.id === selectedTaskId)
-    : undefined
-  const taskDetailData = findTaskDetailData(selectedTask)
+  // === API 数据 ===
+  const { data: projectsData, isLoading: isProjectsLoading } = useProjects()
+  const projects = projectsData?.data ?? []
+  const uiProjects = useMemo(() => projects.map(adaptProject), [projects])
+
+  // 当选中了某个项目时，直接用 useTasks 获取该项目的任务
+  const { data: filteredTasksData, isLoading: isFilteredTasksLoading } = useTasks(
+    filterProjectId ?? '',
+  )
+
+  // 当未选中项目时（All Projects），为每个项目获取任务
+  const allProjectTaskQueries = useQueries({
+    queries: filterProjectId
+      ? [] // 已选中项目时不需要这些查询
+      : projects.map(p => ({
+          queryKey: queryKeys.tasks.list(p.id),
+          queryFn: () =>
+            apiClient.get<PaginatedResponse<Task>>(
+              `/projects/${p.id}/tasks`,
+              { params: { limit: '100' } },
+            ),
+        })),
+  })
+
+  const isAllTasksLoading = !filterProjectId && allProjectTaskQueries.some(q => q.isLoading)
+
+  // 合并任务数据
+  const uiTasks = useMemo(() => {
+    if (filterProjectId) {
+      return (filteredTasksData?.data ?? []).map(adaptTaskForList)
+    }
+    // All Projects: 合并所有项目的任务
+    const allTasks: Task[] = []
+    for (const q of allProjectTaskQueries) {
+      if (q.data?.data) {
+        allTasks.push(...q.data.data)
+      }
+    }
+    return allTasks.map(adaptTaskForList)
+  }, [filterProjectId, filteredTasksData, allProjectTaskQueries])
+
+  // === 选中的任务详情 ===
+  const taskDetailData = useMemo<UITaskDetailData | null>(() => {
+    if (!selectedTaskId) return null
+    const uiTask = uiTasks.find(t => t.id === selectedTaskId)
+    if (!uiTask) return null
+    const project = projects.find(p => p.id === uiTask.projectId)
+    return {
+      id: uiTask.id,
+      projectName: project?.name ?? 'Unknown',
+      projectColor: project?.color ?? 'text-neutral-500',
+      title: uiTask.title,
+      status: uiTask.status,
+      branch: uiTask.branch,
+      description: uiTask.description,
+    }
+  }, [selectedTaskId, uiTasks, projects])
+
+  // === Mutations ===
+  const createProject = useCreateProject()
+  const createTask = useCreateTask(newTaskProjectId)
 
   // === rerender-defer-reads: 侧边栏宽度只在 resize handler 中读取 ===
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -136,32 +190,51 @@ export function ProjectKanbanPage() {
   }, [])
 
   const handleCreateTask = useCallback(() => {
+    // 默认选中当前筛选的项目，或第一个项目
+    setNewTaskProjectId(filterProjectId ?? projects[0]?.id ?? '')
     setIsCreateTaskOpen(true)
-  }, [])
+  }, [filterProjectId, projects])
 
   const handleCloseProjectModal = useCallback(() => {
     setIsCreateProjectOpen(false)
     setNewProjectName('')
+    setNewProjectRepoPath('')
   }, [])
 
   const handleCloseTaskModal = useCallback(() => {
     setIsCreateTaskOpen(false)
     setNewTaskTitle('')
+    setNewTaskDescription('')
+    setNewTaskProjectId('')
   }, [])
 
-  const handleSubmitProject = useCallback(() => {
-    if (!newProjectName.trim()) return
-    // TODO: 调用 API 创建项目
-    console.log('Create project:', newProjectName)
-    handleCloseProjectModal()
-  }, [newProjectName, handleCloseProjectModal])
+  const handleSubmitProject = useCallback(async () => {
+    if (!newProjectName.trim() || !newProjectRepoPath.trim()) return
+    try {
+      await createProject.mutateAsync({
+        name: newProjectName.trim(),
+        repoPath: newProjectRepoPath.trim(),
+      })
+      handleCloseProjectModal()
+    } catch {
+      // mutation error 由 TanStack Query 管理
+    }
+  }, [newProjectName, newProjectRepoPath, createProject, handleCloseProjectModal])
 
-  const handleSubmitTask = useCallback(() => {
-    if (!newTaskTitle.trim()) return
-    // TODO: 调用 API 创建任务
-    console.log('Create task:', newTaskTitle)
-    handleCloseTaskModal()
-  }, [newTaskTitle, handleCloseTaskModal])
+  const handleSubmitTask = useCallback(async () => {
+    if (!newTaskTitle.trim() || !newTaskProjectId) return
+    try {
+      await createTask.mutateAsync({
+        title: newTaskTitle.trim(),
+        description: newTaskDescription.trim() || undefined,
+      })
+      handleCloseTaskModal()
+    } catch {
+      // mutation error 由 TanStack Query 管理
+    }
+  }, [newTaskTitle, newTaskDescription, newTaskProjectId, createTask, handleCloseTaskModal])
+
+  const isLoading = isProjectsLoading || isFilteredTasksLoading || isAllTasksLoading
 
   return (
     <div ref={containerRef} className="h-screen flex flex-col overflow-hidden bg-white">
@@ -179,17 +252,26 @@ export function ProjectKanbanPage() {
       {/* === 主体双栏区域 === */}
       <div className="flex-1 flex overflow-hidden">
         {/* 左侧: TaskList */}
-        <TaskList
-          tasks={MOCK_TASKS}
-          projects={MOCK_PROJECTS}
-          selectedTaskId={selectedTaskId}
-          onSelectTask={setSelectedTaskId}
-          filterProjectId={filterProjectId}
-          setFilterProjectId={setFilterProjectId}
-          width={sidebarWidth}
-          onCreateProject={handleCreateProject}
-          onCreateTask={handleCreateTask}
-        />
+        {isLoading && uiTasks.length === 0 ? (
+          <div
+            className="h-full flex items-center justify-center text-sm text-neutral-400 border-r border-neutral-200 flex-shrink-0"
+            style={{ width: sidebarWidth }}
+          >
+            Loading...
+          </div>
+        ) : (
+          <TaskList
+            tasks={uiTasks}
+            projects={uiProjects}
+            selectedTaskId={selectedTaskId}
+            onSelectTask={setSelectedTaskId}
+            filterProjectId={filterProjectId}
+            setFilterProjectId={setFilterProjectId}
+            width={sidebarWidth}
+            onCreateProject={handleCreateProject}
+            onCreateTask={handleCreateTask}
+          />
+        )}
 
         {/* 拖拽分隔线 */}
         <div
@@ -220,14 +302,14 @@ export function ProjectKanbanPage() {
               </button>
               <button
                 onClick={handleSubmitProject}
-                disabled={!newProjectName.trim()}
+                disabled={!newProjectName.trim() || !newProjectRepoPath.trim() || createProject.isPending}
                 className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${
-                  newProjectName.trim()
+                  newProjectName.trim() && newProjectRepoPath.trim() && !createProject.isPending
                     ? 'bg-neutral-900 text-white hover:bg-black'
                     : 'bg-neutral-100 text-neutral-400 cursor-not-allowed'
                 }`}
               >
-                Create Project
+                {createProject.isPending ? 'Creating...' : 'Create Project'}
               </button>
             </>
           }
@@ -244,11 +326,29 @@ export function ProjectKanbanPage() {
                 placeholder="e.g., Agent Tower"
                 className="w-full px-3 py-2 border border-neutral-200 rounded-lg text-sm focus:outline-none focus:border-neutral-400 transition-colors"
                 autoFocus
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-neutral-700 mb-1.5">
+                Repository Path
+              </label>
+              <input
+                type="text"
+                value={newProjectRepoPath}
+                onChange={e => setNewProjectRepoPath(e.target.value)}
+                placeholder="e.g., /Users/me/projects/my-repo"
+                className="w-full px-3 py-2 border border-neutral-200 rounded-lg text-sm focus:outline-none focus:border-neutral-400 transition-colors font-mono"
                 onKeyDown={e => {
                   if (e.key === 'Enter') handleSubmitProject()
                 }}
               />
+              <p className="mt-1 text-xs text-neutral-400">Must be a valid Git repository</p>
             </div>
+            {createProject.isError && (
+              <p className="text-xs text-red-500">
+                {createProject.error instanceof Error ? createProject.error.message : 'Failed to create project'}
+              </p>
+            )}
           </div>
         </Modal>
 
@@ -267,19 +367,34 @@ export function ProjectKanbanPage() {
               </button>
               <button
                 onClick={handleSubmitTask}
-                disabled={!newTaskTitle.trim()}
+                disabled={!newTaskTitle.trim() || !newTaskProjectId || createTask.isPending}
                 className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${
-                  newTaskTitle.trim()
+                  newTaskTitle.trim() && newTaskProjectId && !createTask.isPending
                     ? 'bg-neutral-900 text-white hover:bg-black'
                     : 'bg-neutral-100 text-neutral-400 cursor-not-allowed'
                 }`}
               >
-                Create Task
+                {createTask.isPending ? 'Creating...' : 'Create Task'}
               </button>
             </>
           }
         >
           <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-neutral-700 mb-1.5">
+                Project
+              </label>
+              <select
+                value={newTaskProjectId}
+                onChange={e => setNewTaskProjectId(e.target.value)}
+                className="w-full px-3 py-2 border border-neutral-200 rounded-lg text-sm focus:outline-none focus:border-neutral-400 transition-colors bg-white"
+              >
+                <option value="">Select a project...</option>
+                {projects.map(p => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            </div>
             <div>
               <label className="block text-sm font-medium text-neutral-700 mb-1.5">
                 Task Title
@@ -290,7 +405,6 @@ export function ProjectKanbanPage() {
                 onChange={e => setNewTaskTitle(e.target.value)}
                 placeholder="e.g., Implement login flow"
                 className="w-full px-3 py-2 border border-neutral-200 rounded-lg text-sm focus:outline-none focus:border-neutral-400 transition-colors"
-                autoFocus
                 onKeyDown={e => {
                   if (e.key === 'Enter') handleSubmitTask()
                 }}
@@ -302,10 +416,17 @@ export function ProjectKanbanPage() {
               </label>
               <textarea
                 rows={3}
+                value={newTaskDescription}
+                onChange={e => setNewTaskDescription(e.target.value)}
                 placeholder="Optional description..."
                 className="w-full px-3 py-2 border border-neutral-200 rounded-lg text-sm focus:outline-none focus:border-neutral-400 transition-colors resize-none"
               />
             </div>
+            {createTask.isError && (
+              <p className="text-xs text-red-500">
+                {createTask.error instanceof Error ? createTask.error.message : 'Failed to create task'}
+              </p>
+            )}
           </div>
         </Modal>
       </Suspense>
