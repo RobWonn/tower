@@ -5,6 +5,7 @@ import { workspaceRoutes } from './workspaces.js';
 import { sessionRoutes } from './sessions.js';
 import { systemRoutes } from './system.js';
 import { demoRoutes } from './demo.js';
+import { filesystemRoutes } from './filesystem.js';
 
 export async function registerRoutes(app: FastifyInstance) {
   // 系统路由
@@ -24,4 +25,7 @@ export async function registerRoutes(app: FastifyInstance) {
 
   // Demo 路由 (MVP)
   await app.register(demoRoutes, { prefix: '/api' });
+
+  // 文件系统浏览路由
+  await app.register(filesystemRoutes, { prefix: '/api/filesystem' });
 }
