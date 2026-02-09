@@ -7,6 +7,7 @@ import { EventEmitter } from 'events'
 import jsonpatch from 'fast-json-patch'
 import type { Operation } from 'fast-json-patch'
 const { applyPatch } = jsonpatch
+import { EntryIndexProvider } from './utils/patch.js'
 import type { LogMsg, JsonPatch, NormalizedConversation } from './types.js'
 
 // Debug 日志开关
@@ -48,9 +49,13 @@ export class MsgStore extends EventEmitter {
   private totalBytes = 0
   private finished = false
 
+  /** 共享的条目索引提供器，parser 和 injectUserMessage 都必须使用它 */
+  readonly entryIndex: EntryIndexProvider
+
   constructor() {
     super()
     this.setMaxListeners(100)
+    this.entryIndex = new EntryIndexProvider()
   }
 
   /**

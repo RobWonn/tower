@@ -211,14 +211,14 @@ export class SessionService {
 
   /**
    * 将用户消息注入 MsgStore（作为 JSON Patch 推送到所有客户端）
+   * 使用 MsgStore 共享的 entryIndex 保证与 parser 索引一致
    */
   private injectUserMessage(sessionId: string, message: string): void {
     const msgStore = sessionMsgStoreManager.get(sessionId);
     if (!msgStore) return;
 
     const entry = createUserMessage(message);
-    const snapshot = msgStore.getSnapshot();
-    const index = snapshot.entries.length;
+    const index = msgStore.entryIndex.next();
     const patch = addNormalizedEntry(index, entry);
     msgStore.pushPatch(patch);
   }

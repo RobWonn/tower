@@ -421,7 +421,6 @@ const CURSOR_AUTH_REQUIRED_MSG = "Authentication required. Please run 'cursor-ag
  */
 export class CursorAgentParser {
   private msgStore: MsgStore;
-  private indexProvider: EntryIndexProvider;
   private buffer: string = '';
   private worktreePath: string;
 
@@ -438,8 +437,12 @@ export class CursorAgentParser {
 
   constructor(msgStore: MsgStore, worktreePath: string = '') {
     this.msgStore = msgStore;
-    this.indexProvider = new EntryIndexProvider();
     this.worktreePath = worktreePath;
+  }
+
+  /** 使用 MsgStore 共享的索引提供器 */
+  private get indexProvider(): EntryIndexProvider {
+    return this.msgStore.entryIndex;
   }
 
   /**

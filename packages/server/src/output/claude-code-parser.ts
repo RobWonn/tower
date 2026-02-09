@@ -78,7 +78,6 @@ function toolNameToAction(toolName: string): ActionType {
  */
 export class ClaudeCodeParser {
   private msgStore: MsgStore
-  private indexProvider: EntryIndexProvider
   private buffer: string = ''
   private toolEntryMap: Map<string, number> = new Map() // tool_use_id -> entry index
   private currentAssistantIndex: number | null = null
@@ -86,7 +85,11 @@ export class ClaudeCodeParser {
 
   constructor(msgStore: MsgStore) {
     this.msgStore = msgStore
-    this.indexProvider = new EntryIndexProvider()
+  }
+
+  /** 使用 MsgStore 共享的索引提供器 */
+  private get indexProvider(): EntryIndexProvider {
+    return this.msgStore.entryIndex
   }
 
   /**

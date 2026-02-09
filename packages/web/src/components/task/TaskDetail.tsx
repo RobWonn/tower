@@ -152,6 +152,11 @@ export function TaskDetail({ task }: TaskDetailProps) {
     return workspaces[0]?.worktreePath
   }, [workspaces])
 
+  // ============ Query Client & Mutations ============
+
+  const queryClient = useQueryClient()
+  const sendMessageMutation = useSendMessage()
+
   // ============ WebSocket Log Stream ============
 
   const {
@@ -164,6 +169,10 @@ export function TaskDetail({ task }: TaskDetailProps) {
     clearLogs,
   } = useNormalizedLogs({
     sessionId,
+    onExit: useCallback(() => {
+      // Agent PTY 退出后，刷新 workspaces query 让 isSessionActive 更新（停止按钮变回发送按钮）
+      queryClient.invalidateQueries({ queryKey: ['workspaces'] })
+    }, [queryClient]),
   })
 
   // Auto-attach when sessionId and socket are ready
@@ -187,10 +196,8 @@ export function TaskDetail({ task }: TaskDetailProps) {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [logs])
 
-  // ============ Message Sending ============
+  // ============ Session Actions ============
 
-  const queryClient = useQueryClient()
-  const sendMessageMutation = useSendMessage()
   const stopSession = useStopSession()
   const resumeSession = useResumeSession()
 
