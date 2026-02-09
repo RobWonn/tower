@@ -3,10 +3,10 @@ import { useQueryClient } from '@tanstack/react-query'
 import { SessionStatus } from '@agent-tower/shared'
 import { LogStream } from '@/components/agent'
 import { IconRunning, IconReview, IconPending, IconDone } from '@/components/agent'
-import { Paperclip, ArrowUp, PanelRightClose, PanelRightOpen, Play, Square } from 'lucide-react'
+import { Paperclip, ArrowUp, PanelRightClose, PanelRightOpen, Play, Square, Code2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { WorkspacePanel } from '@/components/workspace/WorkspacePanel'
-import { useWorkspaces } from '@/hooks/use-workspaces'
+import { useWorkspaces, useOpenInEditor } from '@/hooks/use-workspaces'
 import { useNormalizedLogs } from '@/lib/socket/hooks/useNormalizedLogs'
 import { useSendMessage, useStopSession } from '@/hooks/use-sessions'
 import { StartAgentDialog } from './StartAgentDialog'
@@ -152,10 +152,23 @@ export function TaskDetail({ task }: TaskDetailProps) {
     return workspaces[0]?.worktreePath
   }, [workspaces])
 
+  // Derive active workspace ID for Open in IDE
+  const activeWorkspaceId = useMemo(() => {
+    if (!workspaces) return undefined
+    const active = workspaces.find(ws => ws.status === 'ACTIVE')
+    return active?.id
+  }, [workspaces])
+
   // ============ Query Client & Mutations ============
 
   const queryClient = useQueryClient()
   const sendMessageMutation = useSendMessage()
+  const openInEditorMutation = useOpenInEditor()
+
+  const handleOpenInIde = useCallback(() => {
+    if (!activeWorkspaceId) return
+    openInEditorMutation.mutate({ workspaceId: activeWorkspaceId })
+  }, [activeWorkspaceId, openInEditorMutation])
 
   // ============ WebSocket Log Stream ============
 
@@ -302,6 +315,16 @@ export function TaskDetail({ task }: TaskDetailProps) {
 
         <div className="flex items-center gap-4">
           <StatusBadge status={task.status} />
+
+          {/* Open in IDE */}
+          <button
+            onClick={handleOpenInIde}
+            disabled={!activeWorkspaceId}
+            className="text-neutral-400 hover:text-neutral-900 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+            title="Open in IDE"
+          >
+            <Code2 size={20} />
+          </button>
 
           {/* Toggle Workspace */}
           <button

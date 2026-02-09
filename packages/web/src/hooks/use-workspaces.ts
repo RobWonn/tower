@@ -89,3 +89,11 @@ export function useDeleteWorkspace() {
     },
   })
 }
+
+/** 在 IDE 中打开 workspace */
+export function useOpenInEditor() {
+  return useMutation({
+    mutationFn: ({ workspaceId, editorType }: { workspaceId: string; editorType?: string }) =>
+      apiClient.post<{ success: boolean }>(`/workspaces/${workspaceId}/open-editor`, { editorType }),
+  })
+}

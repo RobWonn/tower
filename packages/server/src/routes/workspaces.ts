@@ -1,8 +1,34 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { spawn } from 'node:child_process';
 import { WorkspaceService } from '../services/workspace.service.js';
 import { ServiceError, NotFoundError } from '../errors.js';
 import { GitError } from '../git/worktree.manager.js';
+
+// ── IDE 命令映射 ─────────────────────────────────────────────────────────────
+
+const IDE_COMMANDS: Record<string, string> = {
+  cursor: 'cursor',
+  vscode: 'code',
+  'vscode-insiders': 'code-insiders',
+  windsurf: 'windsurf',
+  zed: 'zed',
+};
+
+const openEditorSchema = z.object({
+  editorType: z.enum(['cursor', 'vscode', 'vscode-insiders', 'windsurf', 'zed']).nullable().optional(),
+});
+
+/**
+ * 解析 IDE 命令：如果指定了 editorType 则使用对应命令，否则默认 cursor → code fallback
+ */
+function resolveEditorCommand(editorType?: string | null): string {
+  if (editorType && IDE_COMMANDS[editorType]) {
+    return IDE_COMMANDS[editorType];
+  }
+  // 默认使用 cursor，fallback 到 code
+  return 'cursor';
+}
 
 const createWorkspaceSchema = z.object({
   branchName: z.string().min(1).optional(),
@@ -121,6 +147,35 @@ export async function workspaceRoutes(app: FastifyInstance) {
       await workspaceService.delete(request.params.id);
       reply.code(204);
       return;
+    }
+  );
+
+  // ── 在 IDE 中打开工作空间 ──────────────────────────────────────────────────
+
+  app.post<{ Params: { id: string } }>(
+    '/workspaces/:id/open-editor',
+    async (request, reply) => {
+      const { id } = request.params;
+      const body = openEditorSchema.parse(request.body || {});
+
+      const workspace = await workspaceService.findById(id);
+      if (!workspace) {
+        reply.code(404);
+        return errorResponse('Workspace not found', 'NOT_FOUND');
+      }
+
+      if (!workspace.worktreePath) {
+        reply.code(400);
+        return errorResponse('Workspace has no worktree path', 'NO_WORKTREE_PATH');
+      }
+
+      const command = resolveEditorCommand(body.editorType);
+      spawn(command, [workspace.worktreePath], {
+        detached: true,
+        stdio: 'ignore',
+      }).unref();
+
+      return { success: true };
     }
   );
 

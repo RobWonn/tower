@@ -10,7 +10,6 @@ import type {
   Workspace as SharedWorkspace,
 } from '@agent-tower/shared'
 import { TaskStatus as SharedTaskStatus, AgentType } from '@agent-tower/shared'
-import type { LogEntry } from '@agent-tower/shared/log-adapter'
 import type { UITask, UIProject, UITaskDetailData } from './types'
 import { UITaskStatus } from './types'
 
@@ -142,14 +141,12 @@ export function adaptTaskForList(task: SharedTask): UITask {
  *
  * @param task      - 后端 Task 实体
  * @param project   - 后端 Project 实体
- * @param logs      - 日志条目（来自终端/执行日志）
  * @param workspace - 可选的活跃 Workspace（用于获取分支名）
  * @returns UITaskDetailData 对象，可直接传给 TaskDetail
  */
 export function adaptTaskForDetail(
   task: SharedTask,
   project: SharedProject,
-  logs: LogEntry[] = [],
   workspace?: SharedWorkspace,
 ): UITaskDetailData {
   const branch = workspace?.branchName
@@ -164,6 +161,5 @@ export function adaptTaskForDetail(
     status: mapTaskStatusToUI(task.status),
     branch,
     description: task.description ?? '',
-    logs,
   }
 }
