@@ -11,8 +11,10 @@ import { useTerminal } from "@/lib/socket/hooks/useTerminal"
 // ============================================================
 
 export interface TerminalViewProps {
-  /** Session ID 用于接入 PTY 流 */
+  /** Session ID 用于接入 Agent PTY 流 */
   sessionId?: string
+  /** Terminal ID 用于接入独立终端 PTY */
+  terminalId?: string
 }
 
 // ============================================================
@@ -75,41 +77,72 @@ const NoSessionPlaceholder: React.FC = () => (
 // ============================================================
 
 export const TerminalView: React.FC<TerminalViewProps> = React.memo(
-  function TerminalView({ sessionId }) {
-    // 如果没有 sessionId，显示占位
-    if (!sessionId) {
+  function TerminalView({ sessionId, terminalId }) {
+    // 如果两者都没有，显示占位
+    if (!sessionId && !terminalId) {
       return <NoSessionPlaceholder />
     }
 
-    return <TerminalInstance sessionId={sessionId} />
+    // terminalId 模式（独立终端）
+    if (terminalId) {
+      return <TerminalInstance terminalId={terminalId} />
+    }
+
+    // sessionId 模式（Agent 终端）
+    return <TerminalInstance sessionId={sessionId!} />
   }
 )
 
 // ============================================================
-// 终端实例（有 sessionId 时渲染）
+// 终端实例（有 sessionId 或 terminalId 时渲染）
 // ============================================================
 
-const TerminalInstance: React.FC<{ sessionId: string }> = ({ sessionId }) => {
+interface TerminalInstanceProps {
+  sessionId?: string
+  terminalId?: string
+}
+
+const TerminalInstance: React.FC<TerminalInstanceProps> = ({ sessionId, terminalId }) => {
   const terminalRef = useRef<HTMLDivElement>(null)
   const xtermRef = useRef<XTerm | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
 
+  // 唯一 key 用于显示
+  const displayId = sessionId ?? terminalId ?? ""
+
   // 使用 useTerminal hook 接入 PTY
+  const terminalOptions = sessionId
+    ? {
+        sessionId,
+        onOutput: useCallback((data: string) => {
+          xtermRef.current?.write(data)
+        }, []),
+        onExit: useCallback((exitCode: number) => {
+          xtermRef.current?.writeln(
+            `\r\n\x1b[90m[Process exited with code ${exitCode}]\x1b[0m`
+          )
+        }, []),
+        onError: useCallback((message: string) => {
+          xtermRef.current?.writeln(`\r\n\x1b[31m[Error: ${message}]\x1b[0m`)
+        }, []),
+      }
+    : {
+        terminalId: terminalId!,
+        onOutput: useCallback((data: string) => {
+          xtermRef.current?.write(data)
+        }, []),
+        onExit: useCallback((exitCode: number) => {
+          xtermRef.current?.writeln(
+            `\r\n\x1b[90m[Process exited with code ${exitCode}]\x1b[0m`
+          )
+        }, []),
+        onError: useCallback((message: string) => {
+          xtermRef.current?.writeln(`\r\n\x1b[31m[Error: ${message}]\x1b[0m`)
+        }, []),
+      }
+
   const { isConnected, isAttached, attach, sendInput, resize } =
-    useTerminal({
-      sessionId,
-      onOutput: useCallback((data: string) => {
-        xtermRef.current?.write(data)
-      }, []),
-      onExit: useCallback((exitCode: number) => {
-        xtermRef.current?.writeln(
-          `\r\n\x1b[90m[Process exited with code ${exitCode}]\x1b[0m`
-        )
-      }, []),
-      onError: useCallback((message: string) => {
-        xtermRef.current?.writeln(`\r\n\x1b[31m[Error: ${message}]\x1b[0m`)
-      }, []),
-    })
+    useTerminal(terminalOptions)
 
   // 计算连接状态
   const connectionStatus: ConnectionStatus = isAttached
@@ -220,16 +253,18 @@ const TerminalInstance: React.FC<{ sessionId: string }> = ({ sessionId }) => {
 
   return (
     <div className="flex h-full flex-col bg-[#1e1e1e] text-neutral-200 font-mono text-xs">
-      {/* Terminal Header */}
-      <div className="flex items-center justify-between px-3 py-1.5 bg-[#252526] border-b border-[#333] shrink-0">
-        <div className="flex items-center gap-2">
-          <Terminal size={13} className="text-neutral-500" />
-          <span className="text-[11px] text-neutral-400 select-none">
-            Session: {sessionId.slice(0, 8)}...
-          </span>
+      {/* Terminal Header — 仅 agent 模式显示 session 信息 */}
+      {sessionId && (
+        <div className="flex items-center justify-between px-3 py-1.5 bg-[#252526] border-b border-[#333] shrink-0">
+          <div className="flex items-center gap-2">
+            <Terminal size={13} className="text-neutral-500" />
+            <span className="text-[11px] text-neutral-400 select-none">
+              Session: {displayId.slice(0, 8)}...
+            </span>
+          </div>
+          <StatusIndicator status={connectionStatus} />
         </div>
-        <StatusIndicator status={connectionStatus} />
-      </div>
+      )}
 
       {/* Terminal Body */}
       <div

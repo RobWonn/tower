@@ -140,6 +140,17 @@ export function TaskDetail({ task }: TaskDetailProps) {
   const sessionId = activeSession?.id ?? ''
   const isSessionActive = activeSession?.status === SessionStatus.RUNNING || activeSession?.status === SessionStatus.PENDING
 
+  // Derive workingDir from the active workspace's worktreePath
+  const workingDir = useMemo(() => {
+    if (!workspaces) return undefined
+    for (const ws of workspaces) {
+      if (ws.status === 'ACTIVE' && ws.worktreePath) {
+        return ws.worktreePath
+      }
+    }
+    return workspaces[0]?.worktreePath
+  }, [workspaces])
+
   // ============ WebSocket Log Stream ============
 
   const {
@@ -393,7 +404,7 @@ export function TaskDetail({ task }: TaskDetailProps) {
         {/* Right: WorkspacePanel — takes remaining space */}
         {isWorkspaceOpen && (
           <div className="flex-1 flex flex-col min-w-0 bg-white">
-            <WorkspacePanel branch={task.branch} />
+            <WorkspacePanel branch={task.branch} workingDir={workingDir} />
           </div>
         )}
       </div>
