@@ -127,11 +127,11 @@ export function TaskDetail({ task }: TaskDetailProps) {
       const pending = ws.sessions.find(s => s.status === SessionStatus.PENDING)
       if (pending) return pending
     }
-    // Fallback: find the most recent completed/failed session for history replay
+    // Fallback: find the most recent completed/failed/cancelled session for history replay
     for (const ws of workspaces) {
       if (!ws.sessions) continue
       const finished = ws.sessions.find(
-        s => s.status === SessionStatus.COMPLETED || s.status === SessionStatus.FAILED
+        s => s.status === SessionStatus.COMPLETED || s.status === SessionStatus.FAILED || s.status === SessionStatus.CANCELLED
       )
       if (finished) return finished
     }
