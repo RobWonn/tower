@@ -17,6 +17,9 @@ import { Settings } from 'lucide-react'
 const Modal = lazy(() =>
   import('@/components/ui/modal').then(m => ({ default: m.Modal }))
 )
+const FolderPicker = lazy(() =>
+  import('@/components/ui/folder-picker').then(m => ({ default: m.FolderPicker }))
+)
 
 // === rendering-hoist-jsx: 静态 Logo SVG 提升到组件外 ===
 const LOGO_ICON = (
@@ -385,17 +388,10 @@ export function ProjectKanbanPage() {
               <label className="block text-sm font-medium text-neutral-700 mb-1.5">
                 Repository Path
               </label>
-              <input
-                type="text"
+              <FolderPicker
                 value={newProjectRepoPath}
-                onChange={e => setNewProjectRepoPath(e.target.value)}
-                placeholder="e.g., /Users/me/projects/my-repo"
-                className="w-full px-3 py-2 border border-neutral-200 rounded-lg text-sm focus:outline-none focus:border-neutral-400 transition-colors font-mono"
-                onKeyDown={e => {
-                  if (e.key === 'Enter') handleSubmitProject()
-                }}
+                onChange={setNewProjectRepoPath}
               />
-              <p className="mt-1 text-xs text-neutral-400">Must be a valid Git repository</p>
             </div>
             {createProject.isError && (
               <p className="text-xs text-red-500">
