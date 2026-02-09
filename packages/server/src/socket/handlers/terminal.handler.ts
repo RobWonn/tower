@@ -8,8 +8,11 @@ import {
   type TerminalAttachPayload,
   type TerminalInputPayload,
   type TerminalResizePayload,
+  type TerminalCreatePayload,
+  type TerminalDestroyPayload,
   type AckResponse,
 } from '../events.js'
+import { randomUUID } from 'node:crypto'
 
 // Debug 日志开关
 const DEBUG_TERMINAL = process.env.DEBUG_TERMINAL === 'true' || true;
@@ -33,11 +36,14 @@ export class TerminalHandler implements SocketHandler {
   private socketSessions = new Map<string, Set<string>>()
   // 跟踪 session 的 disposers（用于清理事件监听）
   private sessionDisposers = new Map<string, Map<string, () => void>>()
+  // 跟踪 socket 创建的独立终端（断开时自动清理）
+  private socketStandaloneTerminals = new Map<string, Set<string>>()
 
   register(nsp: Namespace, socket: Socket): void {
     // 初始化 socket 的 session 集合
     this.socketSessions.set(socket.id, new Set())
     this.sessionDisposers.set(socket.id, new Map())
+    this.socketStandaloneTerminals.set(socket.id, new Set())
 
     // 连接到终端会话
     socket.on(TerminalClientEvents.ATTACH, (payload: TerminalAttachPayload, ack?: (res: AckResponse) => void) => {
@@ -57,6 +63,16 @@ export class TerminalHandler implements SocketHandler {
     // 终端调整大小
     socket.on(TerminalClientEvents.RESIZE, (payload: TerminalResizePayload) => {
       this.handleResize(payload)
+    })
+
+    // 创建独立终端
+    socket.on(TerminalClientEvents.CREATE, (payload: TerminalCreatePayload, ack?: (res: AckResponse<{ terminalId: string }>) => void) => {
+      this.handleCreate(nsp, socket, payload, ack)
+    })
+
+    // 销毁独立终端
+    socket.on(TerminalClientEvents.DESTROY, (payload: TerminalDestroyPayload, ack?: (res: AckResponse) => void) => {
+      this.handleDestroy(socket, payload, ack)
     })
 
     // 断开连接时清理
@@ -223,8 +239,103 @@ export class TerminalHandler implements SocketHandler {
     }
   }
 
+  private handleCreate(
+    nsp: Namespace,
+    socket: Socket,
+    payload: TerminalCreatePayload,
+    ack?: (res: AckResponse<{ terminalId: string }>) => void
+  ): void {
+    const terminalId = payload.terminalId || randomUUID()
+    const { workingDir } = payload
+
+    if (DEBUG_TERMINAL) {
+      console.log(`[Terminal:create] t=${Date.now()} terminalId=${terminalId} workingDir=${workingDir} socketId=${socket.id}`)
+    }
+
+    try {
+      // 创建独立 PTY
+      const ptyProcess = processManager.spawn(terminalId, workingDir)
+
+      // 记录为该 socket 的独立终端
+      this.socketStandaloneTerminals.get(socket.id)?.add(terminalId)
+
+      // 自动 attach：加入 session 房间
+      this.socketSessions.get(socket.id)?.add(terminalId)
+      socket.join(`terminal:${terminalId}`)
+
+      // 设置 PTY 事件监听
+      const disposers = this.sessionDisposers.get(socket.id)!
+      const onData = ptyProcess.onData((data) => {
+        nsp.to(`terminal:${terminalId}`).emit(TerminalServerEvents.OUTPUT, {
+          sessionId: terminalId,
+          data,
+        })
+      })
+
+      const onExit = ptyProcess.onExit(({ exitCode }) => {
+        if (DEBUG_TERMINAL) {
+          console.log(`[Terminal:exit] t=${Date.now()} terminalId=${terminalId} exitCode=${exitCode}`)
+        }
+        nsp.to(`terminal:${terminalId}`).emit(TerminalServerEvents.EXIT, {
+          sessionId: terminalId,
+          exitCode,
+        })
+        // 从独立终端集合中移除
+        this.socketStandaloneTerminals.get(socket.id)?.delete(terminalId)
+      })
+
+      disposers.set(terminalId, () => {
+        onData.dispose()
+        onExit.dispose()
+      })
+
+      // 通知客户端创建成功
+      socket.emit(TerminalServerEvents.CREATED, { terminalId })
+      socket.emit(TerminalServerEvents.ATTACHED, { sessionId: terminalId })
+      ack?.({ success: true, data: { terminalId } })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to create terminal'
+      console.error(`[Terminal:create] Error creating terminal ${terminalId}:`, err)
+      socket.emit(TerminalServerEvents.ERROR, {
+        sessionId: terminalId,
+        message,
+      })
+      ack?.({ success: false, error: { code: 'CREATE_FAILED', message } })
+    }
+  }
+
+  private handleDestroy(
+    socket: Socket,
+    payload: TerminalDestroyPayload,
+    ack?: (res: AckResponse) => void
+  ): void {
+    const { terminalId } = payload
+
+    if (DEBUG_TERMINAL) {
+      console.log(`[Terminal:destroy] t=${Date.now()} terminalId=${terminalId} socketId=${socket.id}`)
+    }
+
+    // 清理事件监听
+    const disposers = this.sessionDisposers.get(socket.id)
+    const dispose = disposers?.get(terminalId)
+    if (dispose) {
+      dispose()
+      disposers?.delete(terminalId)
+    }
+
+    // 离开房间
+    socket.leave(`terminal:${terminalId}`)
+    this.socketSessions.get(socket.id)?.delete(terminalId)
+    this.socketStandaloneTerminals.get(socket.id)?.delete(terminalId)
+
+    // 杀掉 PTY 进程
+    processManager.kill(terminalId)
+
+    ack?.({ success: true })
+  }
+
   private handleDisconnect(socket: Socket): void {
-    // 清理所有订阅的 session
+    // 清理所有订阅的 session 监听
     const sessions = this.socketSessions.get(socket.id)
     const disposers = this.sessionDisposers.get(socket.id)
 
@@ -234,10 +345,22 @@ export class TerminalHandler implements SocketHandler {
       }
     }
 
+    // 清理所有独立终端 PTY 进程
+    const standaloneTerminals = this.socketStandaloneTerminals.get(socket.id)
+    if (standaloneTerminals) {
+      for (const terminalId of standaloneTerminals) {
+        if (DEBUG_TERMINAL) {
+          console.log(`[Terminal:disconnect] Cleaning standalone terminal ${terminalId} for socket ${socket.id}`)
+        }
+        processManager.kill(terminalId)
+      }
+    }
+
     this.socketSessions.delete(socket.id)
     this.sessionDisposers.delete(socket.id)
+    this.socketStandaloneTerminals.delete(socket.id)
 
-    console.log(`[Terminal] Socket disconnected: ${socket.id}, cleaned ${sessions?.size || 0} sessions`)
+    console.log(`[Terminal] Socket disconnected: ${socket.id}, cleaned ${sessions?.size || 0} sessions, ${standaloneTerminals?.size || 0} standalone terminals`)
   }
 }
 

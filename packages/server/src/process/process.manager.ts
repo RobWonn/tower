@@ -1,27 +1,53 @@
+import * as pty from 'node-pty';
 import type { IPty } from 'node-pty';
 
 export class ProcessManager {
   private processes = new Map<string, IPty>();
 
-  track(sessionId: string, pty: IPty): void {
-    this.processes.set(sessionId, pty);
+  track(sessionId: string, p: IPty): void {
+    this.processes.set(sessionId, p);
 
-    pty.onExit(() => {
+    p.onExit(() => {
       this.processes.delete(sessionId);
     });
   }
 
+  /**
+   * 创建独立终端 PTY 实例
+   * @param terminalId 终端标识符
+   * @param workingDir 工作目录
+   * @returns 创建的 IPty 实例
+   */
+  spawn(terminalId: string, workingDir: string): IPty {
+    const shell = process.env.SHELL || '/bin/bash';
+    const p = pty.spawn(shell, [], {
+      name: 'xterm-256color',
+      cols: 80,
+      rows: 24,
+      cwd: workingDir,
+      env: process.env as Record<string, string>,
+    });
+
+    this.processes.set(terminalId, p);
+
+    p.onExit(() => {
+      this.processes.delete(terminalId);
+    });
+
+    return p;
+  }
+
   write(sessionId: string, data: string): void {
-    const pty = this.processes.get(sessionId);
-    if (pty) {
-      pty.write(data + '\n');
+    const p = this.processes.get(sessionId);
+    if (p) {
+      p.write(data + '\n');
     }
   }
 
   kill(sessionId: string): void {
-    const pty = this.processes.get(sessionId);
-    if (pty) {
-      pty.kill();
+    const p = this.processes.get(sessionId);
+    if (p) {
+      p.kill();
       this.processes.delete(sessionId);
     }
   }

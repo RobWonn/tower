@@ -17,6 +17,10 @@ export const TerminalClientEvents = {
   DETACH: 'terminal:detach',
   INPUT: 'terminal:input',
   RESIZE: 'terminal:resize',
+  /** 创建独立终端 PTY */
+  CREATE: 'terminal:create',
+  /** 销毁独立终端 PTY */
+  DESTROY: 'terminal:destroy',
 } as const
 
 export const TerminalServerEvents = {
@@ -29,6 +33,8 @@ export const TerminalServerEvents = {
   PATCH: 'terminal:patch',
   /** Agent 内部 session ID */
   SESSION_ID: 'terminal:session_id',
+  /** 独立终端创建成功 */
+  CREATED: 'terminal:created',
 } as const
 
 // ============ Agents 命名空间事件 ============
@@ -78,6 +84,22 @@ export interface TerminalExitPayload {
 export interface TerminalErrorPayload {
   sessionId: string
   message: string
+}
+
+/** 创建独立终端 payload */
+export interface TerminalCreatePayload {
+  workingDir: string
+  terminalId?: string
+}
+
+/** 销毁独立终端 payload */
+export interface TerminalDestroyPayload {
+  terminalId: string
+}
+
+/** 独立终端创建成功 payload */
+export interface TerminalCreatedPayload {
+  terminalId: string
 }
 
 /** JSON Patch 操作 */
