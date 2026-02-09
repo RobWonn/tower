@@ -58,15 +58,16 @@ model Workspace {
 // AgentType: CLAUDE_CODE, GEMINI_CLI, CURSOR_AGENT
 // SessionStatus: PENDING, RUNNING, COMPLETED, FAILED, CANCELLED
 model Session {
-  id          String             @id @default(uuid())
-  workspaceId String
-  workspace   Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  agentType   String
-  prompt      String
-  status      String             @default("PENDING")
-  processes   ExecutionProcess[]
-  createdAt   DateTime           @default(now())
-  updatedAt   DateTime           @updatedAt
+  id           String             @id @default(uuid())
+  workspaceId  String
+  workspace    Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  agentType    String
+  prompt       String
+  status       String             @default("PENDING")
+  logSnapshot  String?            // 序列化的 NormalizedConversation JSON，session 结束时持久化
+  processes    ExecutionProcess[]
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
 
   @@index([workspaceId])
 }

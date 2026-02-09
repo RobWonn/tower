@@ -2,6 +2,8 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { SessionService } from '../services/session.service.js';
 import { AgentType } from '../types/index.js';
+import { sessionMsgStoreManager } from '../output/index.js';
+import { prisma } from '../utils/index.js';
 
 const createSessionSchema = z.object({
   agentType: z.nativeEnum(AgentType),
@@ -83,6 +85,39 @@ export async function sessionRoutes(app: FastifyInstance) {
         return { error: 'Session not found' };
       }
       return { success: true };
+    }
+  );
+
+  // 获取会话日志快照
+  app.get<{ Params: { id: string } }>(
+    '/sessions/:id/logs',
+    async (request, reply) => {
+      const { id } = request.params;
+
+      // 检查 session 是否存在
+      const session = await prisma.session.findUnique({ where: { id } });
+      if (!session) {
+        reply.code(404);
+        return { error: 'Session not found' };
+      }
+
+      // 优先从内存 MsgStore 读取（运行中或刚结束的 session）
+      const msgStore = sessionMsgStoreManager.get(id);
+      if (msgStore) {
+        return msgStore.getSnapshot();
+      }
+
+      // 从数据库读取持久化的日志快照
+      if (session.logSnapshot) {
+        try {
+          return JSON.parse(session.logSnapshot);
+        } catch {
+          return { entries: [] };
+        }
+      }
+
+      // MsgStore 不存在且无持久化数据，返回空快照
+      return { entries: [] };
     }
   );
 }

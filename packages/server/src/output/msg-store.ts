@@ -4,7 +4,8 @@
  */
 
 import { EventEmitter } from 'events'
-import type { LogMsg, JsonPatch } from './types.js'
+import { applyPatch, type Operation } from 'fast-json-patch'
+import type { LogMsg, JsonPatch, NormalizedConversation } from './types.js'
 
 // Debug 日志开关
 const DEBUG_MSGSTORE = process.env.DEBUG_MSGSTORE === 'true' || true;
@@ -145,6 +146,37 @@ export class MsgStore extends EventEmitter {
    */
   getMessages(): LogMsg[] {
     return [...this.messages]
+  }
+
+  /**
+   * 获取当前标准化日志快照
+   * 重放所有 patch 和 session_id 消息，构建完整的 NormalizedConversation 状态
+   */
+  getSnapshot(): NormalizedConversation {
+    let conversation: NormalizedConversation = { entries: [] }
+
+    for (const msg of this.messages) {
+      if (msg.type === 'patch') {
+        try {
+          const result = applyPatch(
+            conversation,
+            msg.patch as Operation[],
+            true,  // validate
+            false  // mutate (false = immutable)
+          )
+          conversation = result.newDocument
+        } catch (error) {
+          if (DEBUG_MSGSTORE) {
+            console.error('[MsgStore:getSnapshot] Failed to apply patch:', error)
+          }
+        }
+      } else if (msg.type === 'session_id') {
+        conversation = { ...conversation, sessionId: msg.id }
+      }
+    }
+
+    // 返回深拷贝以避免外部修改影响内部状态
+    return JSON.parse(JSON.stringify(conversation))
   }
 
   /**

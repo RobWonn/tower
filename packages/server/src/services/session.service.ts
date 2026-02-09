@@ -72,9 +72,23 @@ export class SessionService {
       msgStore.pushStdout(data);
     });
 
-    // PTY 退出时标记 MsgStore 完成
-    spawnResult.pty.onExit(() => {
+    // PTY 退出时标记 MsgStore 完成并持久化日志快照
+    spawnResult.pty.onExit(async () => {
       msgStore.pushFinished();
+
+      // 持久化日志快照到数据库
+      try {
+        const snapshot = msgStore.getSnapshot();
+        await prisma.session.update({
+          where: { id },
+          data: {
+            status: SessionStatus.COMPLETED,
+            logSnapshot: JSON.stringify(snapshot),
+          },
+        });
+      } catch (error) {
+        console.error(`[SessionService] Failed to persist log snapshot for session ${id}:`, error);
+      }
     });
 
     this.processManager.track(id, spawnResult.pty);
