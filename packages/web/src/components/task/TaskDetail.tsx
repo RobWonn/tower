@@ -295,7 +295,7 @@ export function TaskDetail({ task }: TaskDetailProps) {
           <div className="flex-1 overflow-y-auto px-6 pt-6 pb-4">
             <div className="w-full">
               {/* Task Description */}
-              <div className="mb-8 pb-8 border-b border-neutral-100">
+              <div className="mb-4 pb-4 border-b border-neutral-100">
                 <p className="text-sm text-neutral-500 leading-relaxed">{task.description}</p>
               </div>
 

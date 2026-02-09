@@ -74,9 +74,9 @@ const ToolBlock = ({ title, content, type }: { title: string; content: string; t
         </span>
       </button>
 
-      {isOpen && (
+      {isOpen && content && (
         <div className="mt-1 bg-neutral-900 rounded-lg p-3 overflow-x-auto">
-          <code className="text-[11px] font-mono text-neutral-300 whitespace-pre">
+          <code className="text-[11px] font-mono text-neutral-300 whitespace-pre-wrap break-all">
             {content}
           </code>
         </div>
