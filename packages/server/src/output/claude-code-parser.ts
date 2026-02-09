@@ -24,6 +24,7 @@ import {
   updateToolStatus,
   setSessionId,
 } from './utils/patch.js'
+import { stripAnsiSequences } from './utils/ansi.js'
 
 /**
  * Claude Code 消息类型
@@ -128,9 +129,10 @@ export class ClaudeCodeParser {
       }
       this.handleMessage(msg)
     } catch {
-      // 非 JSON 行，忽略
+      // 非 JSON 行 — 剥离 ANSI 转义序列后，如果仍有可读文本则忽略（Claude Code 不输出非 JSON 系统消息）
       if (DEBUG_PARSER && line.length > 0) {
-        console.log(`[Parser:parseLine] t=${now} non-JSON line len=${line.length} preview="${line.slice(0, 50)}..."`);
+        const stripped = stripAnsiSequences(line).trim();
+        console.log(`[Parser:parseLine] t=${now} non-JSON line len=${line.length} stripped="${stripped.slice(0, 50)}${stripped.length > 50 ? '...' : ''}"`);
       }
     }
   }

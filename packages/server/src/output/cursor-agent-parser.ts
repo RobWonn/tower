@@ -30,6 +30,7 @@ import {
   updateToolStatus,
   setSessionId,
 } from './utils/patch.js'
+import { stripAnsiSequences } from './utils/ansi.js'
 
 // ============ Cursor JSON 类型定义 ============
 
@@ -464,7 +465,7 @@ export class CursorAgentParser {
    * 处理 stderr 数据
    */
   processStderr(data: string): void {
-    const content = data.replace(/\x1b\[[0-9;]*m/g, ''); // 去除 ANSI 转义
+    const content = stripAnsiSequences(data); // 去除 ANSI 转义
 
     if (content.includes(CURSOR_AUTH_REQUIRED_MSG)) {
       // 认证错误 - 创建 setup_required 错误
@@ -489,9 +490,10 @@ export class CursorAgentParser {
     try {
       msg = JSON.parse(line) as CursorJsonMessage;
     } catch {
-      // 非 JSON 行，作为系统消息输出
-      if (line.trim()) {
-        const entry = createSystemMessage(line);
+      // 非 JSON 行 — 先剥离 ANSI 转义序列，再判断是否有可读内容
+      const stripped = stripAnsiSequences(line).trim();
+      if (stripped) {
+        const entry = createSystemMessage(stripped);
         const index = this.indexProvider.next();
         const patch = addNormalizedEntry(index, entry);
         this.msgStore.pushPatch(patch);
