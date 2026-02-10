@@ -5,6 +5,8 @@ import {
   sessionMsgStoreManager,
   createClaudeCodeParser,
   createCursorAgentParser,
+  createUserMessage,
+  addNormalizedEntry,
 } from '../output/index.js';
 import type { NormalizedConversation } from '../output/index.js';
 import { getProcessManager } from '../socket/handlers/terminal.handler.js';
@@ -116,9 +118,28 @@ export class SessionService {
     }
 
     // 获取或创建 MsgStore（不销毁旧的！）
+    const isNewStore = !sessionMsgStoreManager.has(id);
     const msgStore = sessionMsgStoreManager.getOrCreate(id);
+
+    // 如果是新建的 MsgStore（服务器重启后内存清空），从 DB 恢复基础状态
+    // 这样新 parser 的 entryIndex 能正确衔接，PATCH 不会与前端已有 entries 冲突
+    if (isNewStore && session.logSnapshot) {
+      try {
+        const snapshot = JSON.parse(session.logSnapshot);
+        msgStore.restoreFromSnapshot(snapshot);
+      } catch (error) {
+        console.error(`[SessionService] Failed to restore snapshot for session ${id}:`, error);
+      }
+    }
+
     // 重置 MsgStore 的 finished 状态，让新 PATCH 事件能继续产出
     msgStore.resetFinished();
+
+    // 将用户消息作为 user_message entry 推送到 MsgStore，
+    // 这样前端聊天区域能显示用户发送的消息
+    const userEntry = createUserMessage(message);
+    const userPatch = addNormalizedEntry(msgStore.entryIndex.next(), userEntry);
+    msgStore.pushPatch(userPatch);
 
     // 解析 agentSessionId（用于 spawnFollowUp 继续会话）
     const agentSessionId = this.resolveAgentSessionId(id, session.logSnapshot);

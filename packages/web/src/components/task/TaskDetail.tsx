@@ -221,10 +221,17 @@ export function TaskDetail({ task }: TaskDetailProps) {
 
     // 统一入口：无论 session 是 RUNNING 还是 COMPLETED/CANCELLED，
     // 都调同一个 sendMessage。后端自动处理 PTY 状态。
-    // 不需要 clearLogs / detach / re-attach —— WebSocket 持续订阅，
-    // MsgStore EventEmitter 自动转发新 PATCH。
-    sendMessageMutation.mutate({ id: sessionId, message })
-  }, [input, sessionId, sendMessageMutation])
+    // 发送后需要 re-attach 以确保 WebSocket 订阅正确接收新 PTY 的输出。
+    sendMessageMutation.mutate(
+      { id: sessionId, message },
+      {
+        onSuccess: () => {
+          // 后端已 spawn 新 PTY，重新 attach 以确保 socket room 和 MsgStore 监听正确
+          attach()
+        },
+      }
+    )
+  }, [input, sessionId, sendMessageMutation, attach])
 
   const handleStop = useCallback(async () => {
     if (!sessionId) return

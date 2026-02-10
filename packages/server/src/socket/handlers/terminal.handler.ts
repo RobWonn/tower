@@ -1,7 +1,7 @@
 import type { Namespace, Socket } from 'socket.io'
 import type { SocketHandler } from './base.handler.js'
 import { ProcessManager } from '../../process/process.manager.js'
-import { sessionMsgStoreManager } from '../../output/index.js'
+import { sessionMsgStoreManager, MsgStore } from '../../output/index.js'
 import type { LogMsg } from '../../output/index.js'
 import {
   TerminalClientEvents,
@@ -39,12 +39,25 @@ export class TerminalHandler implements SocketHandler {
   private sessionDisposers = new Map<string, Map<string, () => void>>()
   // 跟踪 socket 创建的独立终端（断开时自动清理）
   private socketStandaloneTerminals = new Map<string, Set<string>>()
+  // 跟踪 MsgStore EventEmitter 订阅（独立于 sessionDisposers，支持延迟注册）
+  private msgStoreDisposers = new Map<string, Map<string, () => void>>()
+  // 保存 namespace 引用，供 store-created 回调使用
+  private nsp: Namespace | null = null
 
   register(nsp: Namespace, socket: Socket): void {
+    // 保存 namespace 引用并注册全局 store-created 监听（只注册一次）
+    if (!this.nsp) {
+      this.nsp = nsp
+      sessionMsgStoreManager.on('store-created', (sessionId: string, store: MsgStore) => {
+        this.handleStoreCreated(nsp, sessionId, store)
+      })
+    }
+
     // 初始化 socket 的 session 集合
     this.socketSessions.set(socket.id, new Set())
     this.sessionDisposers.set(socket.id, new Map())
     this.socketStandaloneTerminals.set(socket.id, new Set())
+    this.msgStoreDisposers.set(socket.id, new Map())
 
     // 连接到终端会话
     socket.on(TerminalClientEvents.ATTACH, (payload: TerminalAttachPayload, ack?: (res: AckResponse) => void) => {
@@ -108,7 +121,14 @@ export class TerminalHandler implements SocketHandler {
     // 设置事件监听
     const disposers = this.sessionDisposers.get(socket.id)!
 
-    // 避免重复订阅
+    // 检查是否需要更新 PTY 监听（PTY 可能被 sendMessage 替换）
+    const existingDispose = disposers.get(sessionId)
+    if (existingDispose && pty) {
+      // 清理旧的 PTY 监听，重新注册新 PTY 的监听
+      existingDispose()
+      disposers.delete(sessionId)
+    }
+
     if (!disposers.has(sessionId)) {
       const disposeFns: (() => void)[] = []
 
@@ -127,6 +147,16 @@ export class TerminalHandler implements SocketHandler {
         })
 
         const onExit = pty.onExit(({ exitCode }) => {
+          // 只有当此 PTY 仍是 processManager 中跟踪的当前 PTY 时才发送 EXIT
+          // 避免 sendMessage 替换 PTY 后，旧 PTY 的 exit 事件干扰前端状态
+          // 如果 processManager 中已无此 sessionId（被 kill 删除）或已被替换为新 PTY，则跳过
+          const currentPty = processManager.get(sessionId)
+          if (currentPty !== pty) {
+            if (DEBUG_TERMINAL) {
+              console.log(`[Terminal:onExit] t=${Date.now()} sessionId=${sessionId} SKIPPED — PTY replaced or killed by sendMessage`);
+            }
+            return
+          }
           if (DEBUG_TERMINAL) {
             console.log(`[Terminal:onExit] t=${Date.now()} sessionId=${sessionId} exitCode=${exitCode}`);
           }
@@ -142,51 +172,81 @@ export class TerminalHandler implements SocketHandler {
         })
       }
 
-      // MsgStore EventEmitter 订阅 — 使用直接事件监听而非 async generator
-      // 这样即使 PTY 退出后 MsgStore pushFinished()，监听器也不会断开，
-      // 当 sendMessage spawn 新 PTY 时，新的 PATCH 事件能继续转发
-      if (msgStore) {
-        let patchCount = 0;
-        const onMessage = (msg: LogMsg) => {
-          if (msg.type === 'patch') {
-            patchCount++;
-            if (DEBUG_TERMINAL) {
-              console.log(`[Terminal:onMessage] t=${Date.now()} #${patchCount} sessionId=${sessionId} emitting PATCH ops=${(msg.patch as unknown[]).length}`);
-            }
-            nsp.to(`terminal:${sessionId}`).emit(TerminalServerEvents.PATCH, {
-              sessionId,
-              patch: msg.patch,
-            })
-          } else if (msg.type === 'session_id') {
-            if (DEBUG_TERMINAL) {
-              console.log(`[Terminal:onMessage] t=${Date.now()} sessionId=${sessionId} emitting SESSION_ID=${msg.id}`);
-            }
-            nsp.to(`terminal:${sessionId}`).emit(TerminalServerEvents.SESSION_ID, {
-              sessionId,
-              agentSessionId: msg.id,
-            })
-          } else if (msg.type === 'finished') {
-            // finished 事件也通过 EXIT 通知前端
-            nsp.to(`terminal:${sessionId}`).emit(TerminalServerEvents.EXIT, {
-              sessionId,
-              exitCode: 0,
-            })
-          }
-        }
-        msgStore.on('message', onMessage)
-
-        disposeFns.push(() => {
-          msgStore.off('message', onMessage)
-        })
-      }
-
       disposers.set(sessionId, () => {
         for (const fn of disposeFns) fn()
       })
     }
 
+    // MsgStore EventEmitter 订阅（独立管理，支持延迟注册）
+    if (msgStore) {
+      this.subscribeMsgStore(nsp, socket.id, sessionId, msgStore)
+    }
+
     socket.emit(TerminalServerEvents.ATTACHED, { sessionId })
     ack?.({ success: true })
+  }
+
+  /**
+   * 为指定 socket 注册 MsgStore EventEmitter 监听
+   * 抽取为独立方法，handleAttach 和 handleStoreCreated 共用
+   */
+  private subscribeMsgStore(nsp: Namespace, socketId: string, sessionId: string, msgStore: MsgStore): void {
+    const disposers = this.msgStoreDisposers.get(socketId)
+    if (!disposers || disposers.has(sessionId)) return // 已订阅或 socket 已断开
+
+    let patchCount = 0;
+    const onMessage = (msg: LogMsg) => {
+      if (msg.type === 'patch') {
+        patchCount++;
+        if (DEBUG_TERMINAL) {
+          console.log(`[Terminal:onMessage] t=${Date.now()} #${patchCount} sessionId=${sessionId} emitting PATCH ops=${(msg.patch as unknown[]).length}`);
+        }
+        nsp.to(`terminal:${sessionId}`).emit(TerminalServerEvents.PATCH, {
+          sessionId,
+          patch: msg.patch,
+        })
+      } else if (msg.type === 'session_id') {
+        if (DEBUG_TERMINAL) {
+          console.log(`[Terminal:onMessage] t=${Date.now()} sessionId=${sessionId} emitting SESSION_ID=${msg.id}`);
+        }
+        nsp.to(`terminal:${sessionId}`).emit(TerminalServerEvents.SESSION_ID, {
+          sessionId,
+          agentSessionId: msg.id,
+        })
+      } else if (msg.type === 'finished') {
+        // finished 事件也通过 EXIT 通知前端
+        nsp.to(`terminal:${sessionId}`).emit(TerminalServerEvents.EXIT, {
+          sessionId,
+          exitCode: 0,
+        })
+      }
+    }
+    msgStore.on('message', onMessage)
+
+    disposers.set(sessionId, () => {
+      msgStore.off('message', onMessage)
+    })
+
+    if (DEBUG_TERMINAL) {
+      console.log(`[Terminal:subscribeMsgStore] t=${Date.now()} sessionId=${sessionId} socketId=${socketId}`);
+    }
+  }
+
+  /**
+   * 当 SessionMsgStoreManager 创建新 MsgStore 时，
+   * 为所有已在 room 中的 socket 补注册 EventEmitter 监听
+   */
+  private handleStoreCreated(nsp: Namespace, sessionId: string, store: MsgStore): void {
+    if (DEBUG_TERMINAL) {
+      console.log(`[Terminal:storeCreated] t=${Date.now()} sessionId=${sessionId}`);
+    }
+
+    // 遍历所有 socket，找到订阅了此 sessionId 的 socket
+    for (const [socketId, sessions] of this.socketSessions) {
+      if (sessions.has(sessionId)) {
+        this.subscribeMsgStore(nsp, socketId, sessionId, store)
+      }
+    }
   }
 
   private handleDetach(
@@ -208,6 +268,14 @@ export class TerminalHandler implements SocketHandler {
     if (dispose) {
       dispose()
       disposers?.delete(sessionId)
+    }
+
+    // 清理 MsgStore 监听
+    const msgDisposers = this.msgStoreDisposers.get(socket.id)
+    const msgDispose = msgDisposers?.get(sessionId)
+    if (msgDispose) {
+      msgDispose()
+      msgDisposers?.delete(sessionId)
     }
 
     socket.emit(TerminalServerEvents.DETACHED, { sessionId })
@@ -338,6 +406,14 @@ export class TerminalHandler implements SocketHandler {
       }
     }
 
+    // 清理 MsgStore 监听
+    const msgDisposers = this.msgStoreDisposers.get(socket.id)
+    if (msgDisposers) {
+      for (const dispose of msgDisposers.values()) {
+        dispose()
+      }
+    }
+
     // 清理所有独立终端 PTY 进程
     const standaloneTerminals = this.socketStandaloneTerminals.get(socket.id)
     if (standaloneTerminals) {
@@ -352,6 +428,7 @@ export class TerminalHandler implements SocketHandler {
     this.socketSessions.delete(socket.id)
     this.sessionDisposers.delete(socket.id)
     this.socketStandaloneTerminals.delete(socket.id)
+    this.msgStoreDisposers.delete(socket.id)
 
     console.log(`[Terminal] Socket disconnected: ${socket.id}, cleaned ${sessions?.size || 0} sessions, ${standaloneTerminals?.size || 0} standalone terminals`)
   }

@@ -182,6 +182,11 @@ export function useNormalizedLogs(options: UseNormalizedLogsOptions): UseNormali
       snapshotLoadedRef.current = false
       pendingPatchesRef.current = []
 
+      // 清空旧 session 的日志数据，避免切换任务时显示混乱
+      setConversation({ entries: [] })
+      setAgentSessionId(null)
+      setIsLoading(false)
+
       if (isAttached) {
         socket.emit(TerminalClientEvents.DETACH, { sessionId })
       }
@@ -205,8 +210,9 @@ export function useNormalizedLogs(options: UseNormalizedLogsOptions): UseNormali
       }
 
       // Apply snapshot as base state, then replay any buffered patches
-      setConversation(prev => {
-        let state: NormalizedConversation = snapshot.entries.length > 0 ? snapshot : prev
+      // 始终使用新 snapshot 作为基础状态，即使为空也不保留旧 session 的数据
+      setConversation(() => {
+        let state: NormalizedConversation = snapshot
         // Replay buffered patches on top of snapshot
         for (const buffered of pendingPatchesRef.current) {
           const startApply = Date.now();
