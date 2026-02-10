@@ -38,4 +38,11 @@ export const queryKeys = {
     content: (workingDir: string, filePath: string) =>
       ['files', 'content', workingDir, filePath] as const,
   },
+
+  git: {
+    all: ['git'] as const,
+    changes: (workingDir: string) => ['git', 'changes', workingDir] as const,
+    diff: (workingDir: string, filePath: string, type: string) =>
+      ['git', 'diff', workingDir, filePath, type] as const,
+  },
 }
