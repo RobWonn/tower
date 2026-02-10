@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Editor from '@monaco-editor/react'
-import { Loader2, X } from 'lucide-react'
+import { Loader2, X, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { FileTree } from './FileTree'
 import { useFileContent, useSaveFile } from '@/hooks/use-files'
@@ -95,6 +95,41 @@ export const EditorView: React.FC<{ workingDir?: string; className?: string }> =
   const [tabs, setTabs] = useState<OpenTab[]>([])
   const [activePath, setActivePath] = useState<string | null>(null)
   const saveMutation = useSaveFile()
+
+  // File tree width & collapse state
+  const [treeWidth, setTreeWidth] = useState(280)
+  const [treeCollapsed, setTreeCollapsed] = useState(false)
+  const [isDragging, setIsDragging] = useState(false)
+  const treeWidthBeforeCollapse = useRef(280)
+
+  const toggleCollapse = useCallback(() => {
+    setTreeCollapsed((prev) => {
+      if (!prev) treeWidthBeforeCollapse.current = treeWidth
+      else setTreeWidth(treeWidthBeforeCollapse.current)
+      return !prev
+    })
+  }, [treeWidth])
+
+  // Drag-to-resize logic
+  const onDragStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    setIsDragging(true)
+    const startX = e.clientX
+    const startWidth = treeWidth
+
+    const onMouseMove = (ev: MouseEvent) => {
+      const delta = ev.clientX - startX
+      const next = Math.min(480, Math.max(160, startWidth + delta))
+      setTreeWidth(next)
+    }
+    const onMouseUp = () => {
+      setIsDragging(false)
+      document.removeEventListener('mousemove', onMouseMove)
+      document.removeEventListener('mouseup', onMouseUp)
+    }
+    document.addEventListener('mousemove', onMouseMove)
+    document.addEventListener('mouseup', onMouseUp)
+  }, [treeWidth])
 
   // Reset when switching workspaces
   useEffect(() => {
@@ -213,16 +248,55 @@ export const EditorView: React.FC<{ workingDir?: string; className?: string }> =
   }, [])
 
   return (
-    <div className={cn('flex h-full overflow-hidden bg-white', className)}>
+    <div className={cn('flex h-full overflow-hidden bg-white', className)} style={isDragging ? { userSelect: 'none', cursor: 'col-resize' } : undefined}>
       {/* Left: file tree */}
-      <div className="w-[280px] border-r border-neutral-200 bg-white shrink-0">
-        <FileTree
-          key={workingDir || 'no-working-dir'}
-          workingDir={workingDir}
-          onFileSelect={openFile}
-          selectedFilePath={activeTab?.path || null}
-        />
+      <div
+        className="border-r border-neutral-200 bg-white shrink-0 overflow-hidden relative"
+        style={{ width: treeCollapsed ? 36 : treeWidth, transition: isDragging ? 'none' : 'width 0.15s ease' }}
+      >
+        {treeCollapsed ? (
+          <div className="h-full flex items-start pt-2 justify-center">
+            <button
+              type="button"
+              onClick={toggleCollapse}
+              className="p-1.5 rounded hover:bg-neutral-100 text-neutral-500 hover:text-neutral-700 transition-colors"
+              title="Expand file tree"
+            >
+              <PanelLeftOpen size={16} />
+            </button>
+          </div>
+        ) : (
+          <>
+            <div className="absolute top-1.5 right-1.5 z-10">
+              <button
+                type="button"
+                onClick={toggleCollapse}
+                className="p-1 rounded hover:bg-neutral-100 text-neutral-400 hover:text-neutral-700 transition-colors"
+                title="Collapse file tree"
+              >
+                <PanelLeftClose size={14} />
+              </button>
+            </div>
+            <FileTree
+              key={workingDir || 'no-working-dir'}
+              workingDir={workingDir}
+              onFileSelect={openFile}
+              selectedFilePath={activeTab?.path || null}
+            />
+          </>
+        )}
       </div>
+
+      {/* Drag handle */}
+      {!treeCollapsed && (
+        <div
+          onMouseDown={onDragStart}
+          className={cn(
+            'w-1 shrink-0 cursor-col-resize transition-colors',
+            isDragging ? 'bg-blue-400' : 'bg-transparent hover:bg-blue-300'
+          )}
+        />
+      )}
 
       {/* Right: tabs + editor */}
       <div className="flex-1 flex flex-col min-w-0">
