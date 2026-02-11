@@ -1,0 +1,29 @@
+{
+  "executors": {
+    "CLAUDE_CODE": {
+      "DEFAULT": {
+        "dangerouslySkipPermissions": true
+      },
+      "PLAN": {
+        "plan": true
+      },
+      "APPROVALS": {
+        "approvals": true
+      }
+    },
+    "GEMINI_CLI": {
+      "DEFAULT": {
+        "yolo": true
+      },
+      "APPROVALS": {
+        "yolo": false
+      }
+    },
+    "CURSOR_AGENT": {
+      "DEFAULT": {
+        "force": true,
+        "model": "auto"
+      }
+    }
+  }
+}

@@ -62,6 +62,7 @@ model Session {
   workspaceId  String
   workspace    Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   agentType    String
+  variant      String             @default("DEFAULT")
   prompt       String
   status       String             @default("PENDING")
   logSnapshot  String?            // 序列化的 NormalizedConversation JSON，session 结束时持久化

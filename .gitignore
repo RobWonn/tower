@@ -142,3 +142,9 @@ vite.config.ts.timestamp-*
 example/
 
 .worktrees/
+
+
+# User profile overrides (runtime data)
+packages/server/data/
+
+*.db

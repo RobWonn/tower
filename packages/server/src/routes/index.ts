@@ -8,6 +8,7 @@ import { demoRoutes } from './demo.js';
 import { filesystemRoutes } from './filesystem.js';
 import { filesRoutes } from './files.js';
 import { gitRoutes } from './git.js';
+import { profileRoutes } from './profiles.js';
 
 export async function registerRoutes(app: FastifyInstance) {
   // 系统路由
@@ -36,4 +37,7 @@ export async function registerRoutes(app: FastifyInstance) {
 
   // Git 变更查看路由
   await app.register(gitRoutes, { prefix: '/api/git' });
+
+  // Profile 配置路由
+  await app.register(profileRoutes, { prefix: '/api' });
 }

@@ -8,6 +8,7 @@ import { prisma } from '../utils/index.js';
 const createSessionSchema = z.object({
   agentType: z.nativeEnum(AgentType),
   prompt: z.string().min(1),
+  variant: z.string().optional(),
 });
 
 const sendMessageSchema = z.object({
@@ -25,7 +26,8 @@ export async function sessionRoutes(app: FastifyInstance) {
       const session = await sessionService.create(
         request.params.workspaceId,
         body.agentType,
-        body.prompt
+        body.prompt,
+        body.variant
       );
       reply.code(201);
       return session;

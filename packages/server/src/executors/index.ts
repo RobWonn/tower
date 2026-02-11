@@ -1,33 +1,65 @@
 /**
  * Executors 模块导出
+ *
+ * 改造: 不再使用全局单例 Map，而是从 profiles 读取配置动态构造 executor 实例
  */
 
 import { AgentType } from '../types/index.js';
 import { BaseExecutor, AvailabilityInfo } from './base.executor.js';
-import { ClaudeCodeExecutor } from './claude-code.executor.js';
-import { GeminiCliExecutor } from './gemini-cli.executor.js';
-import { CursorAgentExecutor } from './cursor-agent.executor.js';
+import { ClaudeCodeExecutor, type ClaudeCodeConfig } from './claude-code.executor.js';
+import { GeminiCliExecutor, type GeminiCliConfig } from './gemini-cli.executor.js';
+import { CursorAgentExecutor, type CursorAgentConfig } from './cursor-agent.executor.js';
+import { getVariantConfig, type VariantConfig } from './profiles.js';
 
-// 执行器注册表
-const executors = new Map<AgentType, BaseExecutor>();
-
-// 注册默认执行器
-executors.set(AgentType.CLAUDE_CODE, new ClaudeCodeExecutor());
-executors.set(AgentType.GEMINI_CLI, new GeminiCliExecutor());
-executors.set(AgentType.CURSOR_AGENT, new CursorAgentExecutor());
+// ─── Executor Factory ────────────────────────────────────────────
 
 /**
- * 获取指定类型的执行器
+ * 根据 agent 类型和 variant 配置创建 executor 实例
  */
-export function getExecutor(agentType: AgentType): BaseExecutor | undefined {
-  return executors.get(agentType);
+function createExecutor(agentType: AgentType, config: VariantConfig = {}): BaseExecutor {
+  switch (agentType) {
+    case AgentType.CLAUDE_CODE:
+      return new ClaudeCodeExecutor(config as ClaudeCodeConfig);
+    case AgentType.GEMINI_CLI:
+      return new GeminiCliExecutor(config as GeminiCliConfig);
+    case AgentType.CURSOR_AGENT:
+      return new CursorAgentExecutor(config as CursorAgentConfig);
+    default:
+      throw new Error(`Unknown agent type: ${agentType}`);
+  }
 }
 
 /**
- * 获取所有执行器
+ * 获取指定类型的执行器（支持 variant）
+ *
+ * @param agentType - agent 类型
+ * @param variant - 配置变体名称，默认 'DEFAULT'
+ */
+export function getExecutor(agentType: AgentType, variant: string = 'DEFAULT'): BaseExecutor | undefined {
+  const config = getVariantConfig(agentType, variant);
+  if (!config) {
+    // variant 不存在时 fallback 到 DEFAULT
+    const defaultConfig = getVariantConfig(agentType, 'DEFAULT');
+    if (!defaultConfig) return undefined;
+    return createExecutor(agentType, defaultConfig);
+  }
+  return createExecutor(agentType, config);
+}
+
+/**
+ * 获取所有已注册的 agent 类型
+ */
+export function getAllAgentTypes(): AgentType[] {
+  return Object.values(AgentType);
+}
+
+/**
+ * 获取所有执行器（每种 agent 的 DEFAULT variant）
  */
 export function getAllExecutors(): BaseExecutor[] {
-  return Array.from(executors.values());
+  return getAllAgentTypes()
+    .map(type => getExecutor(type))
+    .filter((e): e is BaseExecutor => e !== undefined);
 }
 
 /**
@@ -36,7 +68,7 @@ export function getAllExecutors(): BaseExecutor[] {
 export async function getAvailableExecutors(): Promise<BaseExecutor[]> {
   const available: BaseExecutor[] = [];
 
-  for (const executor of executors.values()) {
+  for (const executor of getAllExecutors()) {
     const availability = await executor.getAvailabilityInfo();
     if (availability.type !== 'NOT_FOUND') {
       available.push(executor);
@@ -58,7 +90,7 @@ export async function getAllExecutorsAvailability(): Promise<
 > {
   const results = [];
 
-  for (const executor of executors.values()) {
+  for (const executor of getAllExecutors()) {
     const availability = await executor.getAvailabilityInfo();
     results.push({
       agentType: executor.agentType,
@@ -78,6 +110,18 @@ export { CursorAgentExecutor } from './cursor-agent.executor.js';
 export { CommandBuilder } from './command-builder.js';
 export { ExecutionEnv } from './execution-env.js';
 
+// 导出 profiles
+export {
+  getProfiles,
+  loadProfiles,
+  reloadProfiles,
+  getVariantConfig,
+  getVariantNames,
+  setVariantConfig,
+  deleteVariantConfig,
+  getDefaultProfiles,
+} from './profiles.js';
+
 // 导出类型
 export type { AvailabilityInfo, SpawnedChild, ExecutorSpawnConfig, AgentCapability } from './base.executor.js';
 export type { ClaudeCodeConfig } from './claude-code.executor.js';
@@ -85,3 +129,4 @@ export type { GeminiCliConfig } from './gemini-cli.executor.js';
 export type { CursorAgentConfig } from './cursor-agent.executor.js';
 export type { CmdOverrides, CommandParts } from './command-builder.js';
 export type { RepoContext } from './execution-env.js';
+export type { ExecutorProfiles, VariantConfig, AgentVariants } from './profiles.js';

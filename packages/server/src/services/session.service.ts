@@ -33,11 +33,12 @@ export class SessionService {
     });
   }
 
-  async create(workspaceId: string, agentType: AgentType, prompt: string) {
+  async create(workspaceId: string, agentType: AgentType, prompt: string, variant: string = 'DEFAULT') {
     return prisma.session.create({
       data: {
         workspaceId,
         agentType,
+        variant,
         prompt,
         status: SessionStatus.PENDING,
       },
@@ -54,7 +55,7 @@ export class SessionService {
       return null;
     }
 
-    const executor = getExecutor(session.agentType as AgentType);
+    const executor = getExecutor(session.agentType as AgentType, session.variant ?? 'DEFAULT');
     if (!executor) {
       throw new Error(`Executor not found for agent type: ${session.agentType}`);
     }
@@ -146,7 +147,7 @@ export class SessionService {
 
     // spawn 新 PTY
     const agentType = session.agentType as AgentType;
-    const executor = getExecutor(agentType);
+    const executor = getExecutor(agentType, session.variant ?? 'DEFAULT');
     if (!executor) {
       throw new Error(`Executor not found for agent type: ${session.agentType}`);
     }

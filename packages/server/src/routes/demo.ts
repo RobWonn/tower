@@ -12,6 +12,7 @@ const startDemoSchema = z.object({
   agentType: z.nativeEnum(AgentType),
   prompt: z.string().min(1),
   workingDir: z.string().optional(),
+  variant: z.string().optional(),
 });
 
 const sendMessageSchema = z.object({
@@ -26,7 +27,7 @@ export async function demoRoutes(app: FastifyInstance) {
   app.post('/demo/start', async (request, reply) => {
     const body = startDemoSchema.parse(request.body);
 
-    const executor = getExecutor(body.agentType);
+    const executor = getExecutor(body.agentType, body.variant);
     if (!executor) {
       reply.code(400);
       return { error: `Unsupported agent type: ${body.agentType}` };
