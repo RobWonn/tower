@@ -11,6 +11,8 @@ import { apiClient } from '@/lib/api-client'
 import { queryKeys } from '@/hooks/query-keys'
 import { Settings } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import { useIsMobile } from '@/hooks/use-mobile'
+import { MobileTaskList, MobileTaskDetail } from '@/components/mobile'
 
 // === bundle-dynamic-imports: Modal 组件懒加载 ===
 const Modal = lazy(() =>
@@ -246,6 +248,118 @@ export function ProjectKanbanPage() {
 
   const isLoading = isProjectsLoading || isFilteredTasksLoading || isAllTasksLoading
 
+  const isMobile = useIsMobile()
+
+  // === Mobile: 任务列表 → 点击任务 → 全屏详情页 ===
+  if (isMobile) {
+    // Mobile task detail — 选中任务时全屏展示
+    if (selectedTaskId && taskDetailData) {
+      return (
+        <>
+          <MobileTaskDetail
+            task={taskDetailData}
+            onBack={() => setSelectedTaskId(null)}
+          />
+          {/* Modals 在移动端也需要 */}
+          <Suspense fallback={null}>
+            <Modal isOpen={isCreateProjectOpen} onClose={handleCloseProjectModal} title="Create New Project"
+              action={<>
+                <button onClick={handleCloseProjectModal} className="px-4 py-2 text-sm text-neutral-600">Cancel</button>
+                <button onClick={handleSubmitProject} disabled={!newProjectName.trim() || !newProjectRepoPath.trim() || createProject.isPending}
+                  className={`px-4 py-2 text-sm font-medium rounded-lg ${newProjectName.trim() && newProjectRepoPath.trim() && !createProject.isPending ? 'bg-neutral-900 text-white' : 'bg-neutral-100 text-neutral-400 cursor-not-allowed'}`}>
+                  {createProject.isPending ? 'Creating...' : 'Create'}
+                </button>
+              </>}>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">Project Name</label>
+                  <input type="text" value={newProjectName} onChange={e => setNewProjectName(e.target.value)} placeholder="e.g., Agent Tower"
+                    className="w-full px-3 py-2 border border-neutral-200 rounded-lg text-sm focus:outline-none focus:border-neutral-400" autoFocus />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">Repository Path</label>
+                  <FolderPicker value={newProjectRepoPath} onChange={setNewProjectRepoPath} />
+                </div>
+              </div>
+            </Modal>
+          </Suspense>
+        </>
+      )
+    }
+
+    // Mobile task list — 首页
+    return (
+      <>
+        {isLoading && uiTasks.length === 0 ? (
+          <div className="flex items-center justify-center h-screen bg-neutral-50 text-neutral-400 text-sm">Loading...</div>
+        ) : (
+          <MobileTaskList
+            tasks={uiTasks}
+            projects={uiProjects}
+            filterProjectId={filterProjectId}
+            setFilterProjectId={setFilterProjectId}
+            onSelectTask={setSelectedTaskId}
+            onCreateProject={handleCreateProject}
+            onCreateTask={handleCreateTask}
+            activeTaskIds={activeTaskIds}
+          />
+        )}
+        <Suspense fallback={null}>
+          <Modal isOpen={isCreateProjectOpen} onClose={handleCloseProjectModal} title="Create New Project"
+            action={<>
+              <button onClick={handleCloseProjectModal} className="px-4 py-2 text-sm text-neutral-600">Cancel</button>
+              <button onClick={handleSubmitProject} disabled={!newProjectName.trim() || !newProjectRepoPath.trim() || createProject.isPending}
+                className={`px-4 py-2 text-sm font-medium rounded-lg ${newProjectName.trim() && newProjectRepoPath.trim() && !createProject.isPending ? 'bg-neutral-900 text-white' : 'bg-neutral-100 text-neutral-400 cursor-not-allowed'}`}>
+                {createProject.isPending ? 'Creating...' : 'Create'}
+              </button>
+            </>}>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-neutral-700 mb-1.5">Project Name</label>
+                <input type="text" value={newProjectName} onChange={e => setNewProjectName(e.target.value)} placeholder="e.g., Agent Tower"
+                  className="w-full px-3 py-2 border border-neutral-200 rounded-lg text-sm focus:outline-none focus:border-neutral-400" autoFocus />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-neutral-700 mb-1.5">Repository Path</label>
+                <FolderPicker value={newProjectRepoPath} onChange={setNewProjectRepoPath} />
+              </div>
+            </div>
+          </Modal>
+          <Modal isOpen={isCreateTaskOpen} onClose={handleCloseTaskModal} title="Create New Task"
+            action={<>
+              <button onClick={handleCloseTaskModal} className="px-4 py-2 text-sm text-neutral-600">Cancel</button>
+              <button onClick={handleSubmitTask} disabled={!newTaskTitle.trim() || !newTaskProjectId || createTask.isPending}
+                className={`px-4 py-2 text-sm font-medium rounded-lg ${newTaskTitle.trim() && newTaskProjectId && !createTask.isPending ? 'bg-neutral-900 text-white' : 'bg-neutral-100 text-neutral-400 cursor-not-allowed'}`}>
+                {createTask.isPending ? 'Creating...' : 'Create'}
+              </button>
+            </>}>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-neutral-700 mb-1.5">Project</label>
+                <select value={newTaskProjectId} onChange={e => setNewTaskProjectId(e.target.value)}
+                  className="w-full px-3 py-2 border border-neutral-200 rounded-lg text-sm focus:outline-none focus:border-neutral-400 bg-white">
+                  <option value="">Select a project...</option>
+                  {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-neutral-700 mb-1.5">Task Title</label>
+                <input type="text" value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)} placeholder="e.g., Implement login flow"
+                  className="w-full px-3 py-2 border border-neutral-200 rounded-lg text-sm focus:outline-none focus:border-neutral-400" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-neutral-700 mb-1.5">Description</label>
+                <textarea rows={3} value={newTaskDescription} onChange={e => setNewTaskDescription(e.target.value)} placeholder="Optional..."
+                  className="w-full px-3 py-2 border border-neutral-200 rounded-lg text-sm focus:outline-none focus:border-neutral-400 resize-none" />
+              </div>
+            </div>
+          </Modal>
+        </Suspense>
+      </>
+    )
+  }
+
+  // === Desktop: 原有三栏布局 ===
   return (
     <div ref={containerRef} className="flex flex-col h-screen bg-neutral-50 overflow-hidden text-sm">
       {/* === 顶部栏 === */}

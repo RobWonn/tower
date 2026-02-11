@@ -14,6 +14,8 @@ export interface WorkspacePanelProps {
   /** Session ID 用于 Agent 终端 Tab 接入 PTY */
   sessionId?: string
   workingDir?: string
+  /** 隐藏 Changes tab（移动端已有独立 Changes 视图时使用） */
+  hideChanges?: boolean
 }
 
 // ============================================================
@@ -26,11 +28,17 @@ interface TabConfig {
   icon: React.ReactNode
 }
 
-const TABS: TabConfig[] = [
-  { key: "editor", label: "Editor", icon: <Code2 size={14} /> },
+const DESKTOP_TABS: TabConfig[] = [
   { key: "terminal", label: "Terminal", icon: <Terminal size={14} /> },
+  { key: "editor", label: "Editor", icon: <Code2 size={14} /> },
   { key: "preview", label: "Preview", icon: <Globe size={14} /> },
   { key: "changes", label: "Changes", icon: <GitGraph size={14} /> },
+]
+
+const MOBILE_TABS: TabConfig[] = [
+  { key: "terminal", label: "Terminal", icon: <Terminal size={14} /> },
+  { key: "editor", label: "Editor", icon: <Code2 size={14} /> },
+  { key: "preview", label: "Preview", icon: <Globe size={14} /> },
 ]
 
 // ============================================================
@@ -77,14 +85,16 @@ export const WorkspacePanel: React.FC<WorkspacePanelProps> = React.memo(
     className,
     sessionId,
     workingDir,
+    hideChanges,
   }) {
-    const [activeTab, setActiveTab] = useState<WorkspaceTab>("terminal")
+    const tabs = hideChanges ? MOBILE_TABS : DESKTOP_TABS
+    const [activeTab, setActiveTab] = useState<WorkspaceTab>(hideChanges ? "terminal" : "terminal")
 
     return (
       <div className={cn("flex flex-col h-full bg-white", className)}>
         {/* Tab 栏 — folder style */}
         <div className="flex items-center px-2 pt-2 border-b border-neutral-200 bg-neutral-100/80 shrink-0 gap-1 select-none">
-          {TABS.map((tab) => (
+          {tabs.map((tab) => (
             <TabButton
               key={tab.key}
               active={activeTab === tab.key}
