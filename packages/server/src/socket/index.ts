@@ -22,6 +22,10 @@ export function getIO(): Server {
  * 初始化 Socket.IO 服务
  */
 export function initializeSocket(fastify: FastifyInstance): Server {
+  // Clean up previous instance to prevent listener accumulation during dev hot-reload
+  socketGateway?.destroy()
+  socketGateway = null
+
   io = new Server(fastify.server, {
     cors: {
       origin: process.env.CORS_ORIGIN || '*',

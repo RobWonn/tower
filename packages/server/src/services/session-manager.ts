@@ -20,6 +20,10 @@ export class SessionManager {
     this.eventBus.on('session:exit', ({ sessionId }) => {
       const pipeline = this.pipelines.get(sessionId);
       if (!pipeline) return;
+      // Must call destroy() to remove MsgStore onPatch/onSessionId listeners.
+      // Without this, stale listeners accumulate across send/exit cycles and
+      // each subsequent pushPatch() forwards the same patch N times.
+      pipeline.destroy();
       this.pipelines.delete(sessionId);
       this.persistCompletedSnapshot(sessionId).catch((error) => {
         console.error(`[SessionManager] Failed to persist completed snapshot for ${sessionId}:`, error);

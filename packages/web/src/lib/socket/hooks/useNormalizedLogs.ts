@@ -90,6 +90,7 @@ export function useNormalizedLogs(options: UseNormalizedLogsOptions): UseNormali
     let patchCount = 0;
     const applyOnePatch = (prev: NormalizedConversation, patch: Operation[]): NormalizedConversation => {
       const startApply = Date.now();
+      const prevCount = prev.entries.length;
       try {
         const patched = applyPatch(
           prev,
@@ -97,8 +98,9 @@ export function useNormalizedLogs(options: UseNormalizedLogsOptions): UseNormali
           true, // validate
           false // mutate (false = immutable)
         )
+        const newCount = patched.newDocument.entries.length;
         if (DEBUG_LOGS) {
-          console.log(`[useNormalizedLogs:applyPatch] t=${Date.now()} applyTime=${Date.now() - startApply}ms entries=${patched.newDocument.entries.length}`);
+          console.log(`[useNormalizedLogs:applyPatch] t=${Date.now()} applyTime=${Date.now() - startApply}ms entries=${prevCount}->${newCount} delta=${newCount - prevCount}`);
         }
         return patched.newDocument
       } catch (error) {
@@ -113,7 +115,11 @@ export function useNormalizedLogs(options: UseNormalizedLogsOptions): UseNormali
       patchCount++;
       const now = Date.now();
       if (DEBUG_LOGS) {
-        console.log(`[useNormalizedLogs:handlePatch] t=${now} #${patchCount} sessionId=${sessionId} ops=${payload.patch.length} snapshotLoaded=${snapshotLoadedRef.current}`);
+        // Log each op's path+op to distinguish user_message add from content replace
+        const opsSummary = (payload.patch as Array<{op: string; path: string}>)
+          .map(o => `${o.op}:${o.path}`)
+          .join(', ');
+        console.log(`[useNormalizedLogs:handlePatch] t=${now} #${patchCount} sessionId=${sessionId} ops=${payload.patch.length} snapshotLoaded=${snapshotLoadedRef.current} [${opsSummary}]`);
       }
 
       // If snapshot hasn't loaded yet, buffer the patch

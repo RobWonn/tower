@@ -42,6 +42,10 @@ export class AgentPipeline {
       this.parser?.finish();
       this.msgStore.pushFinished();
       this.eventBus.emit('session:exit', { sessionId: this.sessionId, exitCode });
+      // Self-cleanup: remove MsgStore listeners so stale references don't accumulate.
+      // SessionManager.session:exit handler also calls destroy(), but this ensures
+      // cleanup even if external code doesn't explicitly destroy the pipeline.
+      this.destroy();
     });
   }
 

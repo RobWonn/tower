@@ -401,7 +401,7 @@ export function AgentDemoPage() {
               className="w-full px-4 py-3 bg-transparent border-none focus:outline-none focus:ring-0 resize-none text-neutral-900 placeholder-neutral-400 leading-relaxed text-sm scrollbar-thin scrollbar-thumb-neutral-200 scrollbar-track-transparent"
               style={{ minHeight: '80px', maxHeight: '210px' }}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
+                if (e.key === 'Enter' && !e.shiftKey && !e.repeat) {
                   e.preventDefault()
                   handleSendMessage()
                 }

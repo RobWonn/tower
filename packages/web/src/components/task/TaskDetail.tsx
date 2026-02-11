@@ -314,8 +314,10 @@ export function TaskDetail({ task }: TaskDetailProps) {
 
   const stopSession = useStopSession()
 
+  const sendingRef = useRef(false)
   const handleSend = useCallback(async () => {
-    if (!input.trim() || !sessionId) return
+    if (!input.trim() || !sessionId || sendingRef.current) return
+    sendingRef.current = true
     const message = input.trim()
     setInput('')
     if (textareaRef.current) {
@@ -331,6 +333,9 @@ export function TaskDetail({ task }: TaskDetailProps) {
         onSuccess: () => {
           // 后端已 spawn 新 PTY，重新 attach 以确保 socket room 和 MsgStore 监听正确
           attach()
+        },
+        onSettled: () => {
+          sendingRef.current = false
         },
       }
     )
@@ -525,7 +530,7 @@ export function TaskDetail({ task }: TaskDetailProps) {
                 value={input}
                 onChange={handleInput}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
+                  if (e.key === 'Enter' && !e.shiftKey && !e.repeat) {
                     e.preventDefault()
                     handleSend()
                   }
