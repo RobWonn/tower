@@ -1,12 +1,69 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { type LogEntry, LogType } from '@agent-tower/shared/log-adapter'
-import { Terminal, Brain, ChevronRight, ChevronDown } from 'lucide-react'
+import { Terminal, Brain, ChevronRight, ChevronDown, Files } from 'lucide-react'
 import { Streamdown } from 'streamdown'
 import 'streamdown/styles.css'
 
 interface LogStreamProps {
   logs: LogEntry[]
 }
+
+// ============ Grouping Logic ============
+
+/** Extract the base tool label without status suffixes like ✓ ✗ */
+function toolBaseLabel(title: string): string {
+  return title.replace(/\s*[✓✗]$/, '').replace(/\s*\(.*\)$/, '').trim()
+}
+
+type RenderItem =
+  | { kind: 'single'; log: LogEntry }
+  | { kind: 'group'; label: string; logs: LogEntry[] }
+
+/** Group consecutive Tool entries with the same base label into collapsed groups */
+function groupConsecutiveTools(logs: LogEntry[]): RenderItem[] {
+  const items: RenderItem[] = []
+  let i = 0
+
+  while (i < logs.length) {
+    const log = logs[i]
+
+    // Only group Tool type entries
+    if (log.type === LogType.Tool && log.title) {
+      const baseLabel = toolBaseLabel(log.title)
+      const group: LogEntry[] = [log]
+      let j = i + 1
+
+      // Collect consecutive tools with the same base label
+      while (j < logs.length) {
+        const next = logs[j]
+        if (next.type === LogType.Tool && next.title && toolBaseLabel(next.title) === baseLabel) {
+          group.push(next)
+          j++
+        } else {
+          break
+        }
+      }
+
+      if (group.length >= 2) {
+        // 2+ consecutive same-type tools → collapse into a group
+        items.push({ kind: 'group', label: baseLabel, logs: group })
+      } else {
+        // 1-2 items, render individually
+        for (const g of group) {
+          items.push({ kind: 'single', log: g })
+        }
+      }
+      i = j
+    } else {
+      items.push({ kind: 'single', log })
+      i++
+    }
+  }
+
+  return items
+}
+
+// ============ Components ============
 
 // 1. User Message — 右对齐聊天气泡
 const UserMessage = ({ content }: { content: string }) => (
@@ -90,6 +147,89 @@ const ToolBlock = ({ title, content, type }: { title: string; content: string; t
   )
 }
 
+// 3b. Tool Group — collapsed group of consecutive same-type tool calls
+const ToolGroup = ({ label, logs }: { label: string; logs: LogEntry[] }) => {
+  const [isOpen, setIsOpen] = useState(false)
+
+  // Extract short file/resource names from content for preview
+  const summaries = logs.map((log) => {
+    const firstLine = log.content.split('\n')[0] || ''
+    // Try to extract just the filename from a path
+    const pathMatch = firstLine.match(/([^/\\]+\.[a-zA-Z0-9]+)/)
+    return pathMatch ? pathMatch[1] : firstLine.slice(0, 60)
+  })
+
+  return (
+    <div className="mb-3">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-mono w-full text-left transition-all ${
+          isOpen
+            ? 'bg-neutral-50 border-neutral-200 text-neutral-700'
+            : 'bg-white border-neutral-100 text-neutral-500 hover:border-neutral-200 hover:text-neutral-700'
+        }`}
+      >
+        <Files size={12} className="opacity-70 shrink-0" />
+        <span className="font-medium shrink-0">{label}</span>
+        <span className="inline-flex items-center justify-center px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-500 text-[10px] font-semibold leading-none shrink-0">
+          {logs.length}
+        </span>
+        {!isOpen && (
+          <span className="truncate text-neutral-400">
+            — {summaries.slice(0, 3).join(', ')}{logs.length > 3 ? ', …' : ''}
+          </span>
+        )}
+        <span className="ml-auto text-neutral-400 shrink-0">
+          {isOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        </span>
+      </button>
+
+      {isOpen && (
+        <div className="mt-1 border border-neutral-100 rounded-lg overflow-hidden divide-y divide-neutral-50">
+          {logs.map((log) => {
+            const firstLine = log.content.split('\n')[0] || ''
+            return (
+              <ToolGroupItem key={log.id} log={log} firstLine={firstLine} />
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Single item inside a ToolGroup — expandable for full content */
+const ToolGroupItem = ({ log, firstLine }: { log: LogEntry; firstLine: string }) => {
+  const [isDetailOpen, setIsDetailOpen] = useState(false)
+  const hasMultiLineContent = log.content.includes('\n')
+
+  return (
+    <div className="bg-white">
+      <button
+        onClick={() => hasMultiLineContent && setIsDetailOpen(!isDetailOpen)}
+        className={`flex items-center gap-2 px-3 py-1.5 text-xs font-mono w-full text-left ${
+          hasMultiLineContent ? 'hover:bg-neutral-50 cursor-pointer' : 'cursor-default'
+        } text-neutral-500`}
+      >
+        <div className="w-1 h-1 rounded-full bg-neutral-300 shrink-0" />
+        <span className="truncate">{firstLine}</span>
+        {hasMultiLineContent && (
+          <span className="ml-auto text-neutral-300 shrink-0">
+            {isDetailOpen ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
+          </span>
+        )}
+      </button>
+      {isDetailOpen && (
+        <div className="mx-3 mb-2 bg-neutral-900 rounded-lg p-3 overflow-x-auto">
+          <code className="text-[11px] font-mono text-neutral-300 whitespace-pre-wrap break-all">
+            {log.content}
+          </code>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // 4. Agent 主文本 — 纯文本无图标
 const AgentText = ({ content }: { content: string }) => (
   <div className="text-sm text-neutral-800 leading-7 mb-4 whitespace-pre-wrap animate-in fade-in duration-500">
@@ -104,10 +244,20 @@ const AssistantMessage = ({ content }: { content: string }) => (
   </div>
 )
 
+// ============ Main Component ============
+
 export function LogStream({ logs }: LogStreamProps) {
+  const items = useMemo(() => groupConsecutiveTools(logs), [logs])
+
   return (
     <div className="flex flex-col w-full mx-auto pb-4">
-      {logs.map((log) => {
+      {items.map((item) => {
+        if (item.kind === 'group') {
+          return <ToolGroup key={item.logs[0].id} label={item.label} logs={item.logs} />
+        }
+
+        const log = item.log
+
         // 跳过空内容的条目，避免空 div 占据间距
         if (!log.content && log.type !== LogType.Cursor) return null
 
