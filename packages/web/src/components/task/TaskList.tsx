@@ -11,7 +11,7 @@ interface TaskListProps {
   onSelectTask: (id: string) => void
   filterProjectId: string | null
   setFilterProjectId: (id: string | null) => void
-  width?: number
+  width?: number | string
   onCreateProject?: () => void
   onCreateTask?: () => void
   /** 当前有 Agent 正在运行的任务 ID 集合 */
@@ -78,9 +78,11 @@ export function TaskList({
   // 单次遍历分组
   const grouped = groupTasksByStatus(filteredTasks)
 
+  const isFullWidth = width === '100%'
+
   return (
     <div
-      className="h-full flex flex-col bg-white border-r border-neutral-200 flex-shrink-0"
+      className={`h-full flex flex-col bg-white flex-shrink-0 ${isFullWidth ? '' : 'border-r border-neutral-200'}`}
       style={{ width }}
     >
       {/* Header: 项目筛选下拉 */}

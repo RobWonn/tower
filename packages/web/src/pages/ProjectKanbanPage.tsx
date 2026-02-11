@@ -12,7 +12,7 @@ import { queryKeys } from '@/hooks/query-keys'
 import { Settings } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useIsMobile } from '@/hooks/use-mobile'
-import { MobileTaskList, MobileTaskDetail } from '@/components/mobile'
+import { MobileTaskDetail } from '@/components/mobile'
 
 // === bundle-dynamic-imports: Modal 组件懒加载 ===
 const Modal = lazy(() =>
@@ -287,23 +287,38 @@ export function ProjectKanbanPage() {
       )
     }
 
-    // Mobile task list — 首页
+    // Mobile task list — 复用桌面端 TaskList，全宽 + 隐藏右侧边框
     return (
       <>
-        {isLoading && uiTasks.length === 0 ? (
-          <div className="flex items-center justify-center h-screen bg-neutral-50 text-neutral-400 text-sm">Loading...</div>
-        ) : (
-          <MobileTaskList
-            tasks={uiTasks}
-            projects={uiProjects}
-            filterProjectId={filterProjectId}
-            setFilterProjectId={setFilterProjectId}
-            onSelectTask={setSelectedTaskId}
-            onCreateProject={handleCreateProject}
-            onCreateTask={handleCreateTask}
-            activeTaskIds={activeTaskIds}
-          />
-        )}
+        <div className="flex flex-col h-dvh bg-neutral-50 overflow-hidden text-sm">
+          {/* 顶部栏 */}
+          <header className="h-12 bg-white border-b border-neutral-200 flex items-center px-4 justify-between shrink-0 z-10">
+            <div className="flex items-center gap-2">
+              {LOGO_ICON}
+              {HEADER_TITLE}
+            </div>
+            <Link to="/settings" className="p-1.5 text-neutral-400 active:text-neutral-900 rounded-md">
+              <Settings size={16} />
+            </Link>
+          </header>
+
+          {isLoading && uiTasks.length === 0 ? (
+            <div className="flex-1 flex items-center justify-center text-sm text-neutral-400">Loading...</div>
+          ) : (
+            <TaskList
+              tasks={uiTasks}
+              projects={uiProjects}
+              selectedTaskId={null}
+              onSelectTask={setSelectedTaskId}
+              filterProjectId={filterProjectId}
+              setFilterProjectId={setFilterProjectId}
+              width="100%"
+              onCreateProject={handleCreateProject}
+              onCreateTask={handleCreateTask}
+              activeTaskIds={activeTaskIds}
+            />
+          )}
+        </div>
         <Suspense fallback={null}>
           <Modal isOpen={isCreateProjectOpen} onClose={handleCloseProjectModal} title="Create New Project"
             action={<>
