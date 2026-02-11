@@ -68,7 +68,10 @@ const ToolBlock = ({ title, content, type }: { title: string; content: string; t
         }`}
       >
         <Terminal size={12} className="opacity-70" />
-        <span className="flex-1 truncate font-medium">{title || 'System Operation'}</span>
+        <span className="font-medium shrink-0">{title || 'System Operation'}</span>
+        {content && content.split('\n')[0] !== title && (
+          <span className="truncate text-neutral-400">— {content.split('\n')[0]}</span>
+        )}
         <span className="opacity-0 group-hover:opacity-100 transition-opacity text-neutral-400">
           {isOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
         </span>
