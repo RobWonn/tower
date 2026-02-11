@@ -40,6 +40,7 @@ interface ClaudeCodeMessage {
     content?: Array<{
       type: string
       text?: string
+      thinking?: string
       name?: string
       input?: unknown
       tool_use_id?: string
@@ -54,6 +55,13 @@ interface ClaudeCodeMessage {
   }
   content?: string
   error?: string
+  event?: {
+    type: string
+    index?: number
+    content_block?: { type: string; thinking?: string; text?: string }
+    delta?: { type: string; thinking?: string; text?: string }
+    message?: { role?: string }
+  }
 }
 
 /**
@@ -75,6 +83,15 @@ function toolNameToAction(toolName: string): ActionType {
 }
 
 /**
+ * Streaming content block state
+ */
+interface StreamingContentBlock {
+  kind: 'text' | 'thinking'
+  entryIndex: number
+  buffer: string
+}
+
+/**
  * Claude Code 解析器
  */
 export class ClaudeCodeParser {
@@ -83,6 +100,9 @@ export class ClaudeCodeParser {
   private toolEntryMap: Map<string, number> = new Map() // tool_use_id -> entry index
   private currentAssistantIndex: number | null = null
   private currentAssistantContent: string = ''
+  // stream_event state
+  private streamingBlocks: Map<number, StreamingContentBlock> = new Map()
+  private streamingRole: string | null = null
 
   constructor(msgStore: MsgStore) {
     this.msgStore = msgStore
@@ -157,6 +177,9 @@ export class ClaudeCodeParser {
       case 'error':
         this.handleErrorMessage(msg)
         break
+      case 'stream_event':
+        this.handleStreamEvent(msg)
+        break
     }
   }
 
@@ -183,9 +206,9 @@ export class ClaudeCodeParser {
       } else if (block.type === 'tool_use' && block.name) {
         this.flushAssistantText()
         this.handleToolUse(block.name, block.input, msg.message.id)
-      } else if (block.type === 'thinking' && block.text) {
+      } else if (block.type === 'thinking' && block.thinking) {
         this.flushAssistantText()
-        this.addThinking(block.text)
+        this.addThinking(block.thinking)
       }
     }
   }
@@ -317,6 +340,106 @@ export class ClaudeCodeParser {
     const index = this.indexProvider.next()
     const patch = addNormalizedEntry(index, entry)
     this.msgStore.pushPatch(patch)
+  }
+
+  /**
+   * 处理 stream_event（增量流式消息）
+   */
+  private handleStreamEvent(msg: ClaudeCodeMessage): void {
+    const event = msg.event
+    if (!event) return
+
+    switch (event.type) {
+      case 'message_start': {
+        this.streamingRole = event.message?.role || null
+        break
+      }
+
+      case 'content_block_start': {
+        const index = event.index
+        const block = event.content_block
+        if (index == null || !block) break
+
+        const kind = block.type === 'thinking' ? 'thinking' : 'text'
+        const initial = kind === 'thinking' ? (block.thinking || '') : (block.text || '')
+
+        // Create the entry immediately
+        let entryIndex: number
+        if (kind === 'thinking') {
+          this.flushAssistantText()
+          const entry = createThinking(initial)
+          entryIndex = this.indexProvider.next()
+          const patch = addNormalizedEntry(entryIndex, entry)
+          this.msgStore.pushPatch(patch)
+        } else {
+          // text block — start or reuse assistant message
+          if (this.currentAssistantIndex === null) {
+            const entry = createAssistantMessage(initial)
+            entryIndex = this.indexProvider.next()
+            this.currentAssistantIndex = entryIndex
+            this.currentAssistantContent = initial
+            const patch = addNormalizedEntry(entryIndex, entry)
+            this.msgStore.pushPatch(patch)
+          } else {
+            entryIndex = this.currentAssistantIndex
+            if (initial) {
+              this.currentAssistantContent += initial
+              const patch = updateEntryContent(entryIndex, this.currentAssistantContent)
+              this.msgStore.pushPatch(patch)
+            }
+          }
+        }
+
+        this.streamingBlocks.set(index, { kind, entryIndex, buffer: initial })
+        break
+      }
+
+      case 'content_block_delta': {
+        const index = event.index
+        const delta = event.delta
+        if (index == null || !delta) break
+
+        const block = this.streamingBlocks.get(index)
+        if (!block) break
+
+        const chunk = delta.type === 'thinking_delta' ? (delta.thinking || '') : (delta.text || '')
+        if (!chunk) break
+
+        block.buffer += chunk
+
+        if (block.kind === 'thinking') {
+          const patch = updateEntryContent(block.entryIndex, block.buffer)
+          this.msgStore.pushPatch(patch)
+        } else {
+          this.currentAssistantContent = block.buffer
+          const patch = updateEntryContent(block.entryIndex, this.currentAssistantContent)
+          this.msgStore.pushPatch(patch)
+        }
+        break
+      }
+
+      case 'content_block_stop': {
+        const index = event.index
+        if (index == null) break
+
+        const block = this.streamingBlocks.get(index)
+        if (!block) break
+
+        if (block.kind === 'text') {
+          // Keep currentAssistantIndex so next text block appends,
+          // but flush will be called by next thinking block or tool_use
+        }
+        this.streamingBlocks.delete(index)
+        break
+      }
+
+      case 'message_stop': {
+        this.flushAssistantText()
+        this.streamingBlocks.clear()
+        this.streamingRole = null
+        break
+      }
+    }
   }
 
   /**
