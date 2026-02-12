@@ -16,6 +16,7 @@ import {
   createToolUse,
   createThinking,
   createErrorMessage,
+  createTokenUsageInfo,
 } from './types.js'
 import {
   EntryIndexProvider,
@@ -56,6 +57,16 @@ interface ClaudeCodeMessage {
   }
   content?: string
   error?: string
+  usage?: {
+    input_tokens?: number
+    output_tokens?: number
+    cache_creation_input_tokens?: number
+    cache_read_input_tokens?: number
+  }
+  model_usage?: Record<string, {
+    context_window?: number
+    [key: string]: unknown
+  }>
   event?: {
     type: string
     index?: number
@@ -389,6 +400,34 @@ export class ClaudeCodeParser {
         const status: ToolStatus = msg.tool_result?.is_error ? 'failed' : 'success'
         const patch = updateToolStatus(index, status)
         this.msgStore.pushPatch(patch)
+      }
+    }
+
+    // 从 success result 中提取 token 用量
+    if (msg.subtype === 'success' && msg.usage) {
+      try {
+        const usage = msg.usage
+        const totalTokens =
+          (usage.input_tokens || 0) +
+          (usage.output_tokens || 0) +
+          (usage.cache_creation_input_tokens || 0) +
+          (usage.cache_read_input_tokens || 0)
+
+        // 从 model_usage 中提取真实的 context_window
+        let modelContextWindow: number | undefined
+        if (msg.model_usage) {
+          const firstModel = Object.values(msg.model_usage)[0]
+          if (firstModel?.context_window) {
+            modelContextWindow = firstModel.context_window
+          }
+        }
+
+        const entry = createTokenUsageInfo(totalTokens, modelContextWindow)
+        const index = this.indexProvider.next()
+        const patch = addNormalizedEntry(index, entry)
+        this.msgStore.pushPatch(patch)
+      } catch {
+        // token 提取失败不影响正常解析
       }
     }
   }

@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { SessionStatus } from '@agent-tower/shared'
 import { LogStream } from '@/components/agent'
 import { TodoPanel } from '@/components/agent'
+import { TokenUsageIndicator } from '@/components/agent'
 import { IconRunning, IconReview, IconPending, IconDone } from '@/components/agent'
 import { Paperclip, ArrowUp, PanelRightClose, PanelRightOpen, Play, Square, Code2, Trash2, MoreVertical } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -11,6 +12,7 @@ import { useWorkspaces, useOpenInEditor } from '@/hooks/use-workspaces'
 import { useNormalizedLogs } from '@/lib/socket/hooks/useNormalizedLogs'
 import { useSendMessage, useStopSession } from '@/hooks/use-sessions'
 import { useTodos } from '@/hooks/use-todos'
+import { useTokenUsage } from '@/hooks/useTokenUsage'
 import { StartAgentDialog } from './StartAgentDialog'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import type { UITaskDetailData } from './types'
@@ -227,6 +229,15 @@ export function TaskDetail({ task, onDeleteTask, isDeleting }: TaskDetailProps) 
 
   // Extract agent todos from the log stream
   const { todos } = useTodos(entries)
+
+  // Token usage — 取最新一条，回退到持久化值
+  const initialTokenUsage = useMemo(() => {
+    if (!activeSession?.tokenUsage) return undefined
+    const tu = activeSession.tokenUsage
+    if (typeof tu.totalTokens === 'number') return tu as { totalTokens: number; modelContextWindow?: number }
+    return undefined
+  }, [activeSession?.tokenUsage])
+  const tokenUsage = useTokenUsage(logs, initialTokenUsage)
 
   // Auto-attach: 当 sessionId 或连接状态变化时自动 attach
   useEffect(() => {
@@ -616,6 +627,7 @@ export function TaskDetail({ task, onDeleteTask, isDeleting }: TaskDetailProps) 
                   <button className="p-2 text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 rounded-lg transition-colors">
                     <Paperclip size={18} />
                   </button>
+                  <TokenUsageIndicator usage={tokenUsage} />
                 </div>
 
                 <div className="flex items-center gap-2">

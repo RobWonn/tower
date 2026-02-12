@@ -21,6 +21,10 @@ export interface LogEntry {
   title?: string
   isCollapsed?: boolean
   children?: LogEntry[]
+  tokenUsage?: {
+    totalTokens: number
+    modelContextWindow?: number
+  }
 }
 
 // ============ 标准化类型 (来自 server/output/types.ts) ============
@@ -76,10 +80,8 @@ export interface NormalizedEntry {
       to?: string
     }>
     tokenUsage?: {
-      inputTokens?: number
-      outputTokens?: number
-      cacheReadTokens?: number
-      cacheWriteTokens?: number
+      totalTokens?: number
+      modelContextWindow?: number
     }
     error?: string
     /** Agent todo list (for todo_management action) */
@@ -193,13 +195,17 @@ export function normalizedEntryToLogEntry(entry: NormalizedEntry): LogEntry | nu
       }
 
     case 'token_usage_info':
-      // token 使用信息可以选择性显示
-      if (entry.metadata?.tokenUsage) {
-        const { inputTokens, outputTokens } = entry.metadata.tokenUsage
+      // token 使用信息 — 传递结构化数据供前端展示
+      if (entry.metadata?.tokenUsage && entry.metadata.tokenUsage.totalTokens) {
+        const { totalTokens, modelContextWindow } = entry.metadata.tokenUsage
         return {
           id: entry.id,
           type: LogType.Info,
-          content: `Token 使用: 输入 ${inputTokens || 0}, 输出 ${outputTokens || 0}`,
+          content: entry.content,
+          tokenUsage: {
+            totalTokens,
+            modelContextWindow,
+          },
         }
       }
       return null

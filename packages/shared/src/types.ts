@@ -90,6 +90,7 @@ export interface Session {
   workspaceId: string
   agentType: AgentType
   status: SessionStatus
+  tokenUsage?: { totalTokens: number; modelContextWindow?: number } | null
   startedAt?: string
   endedAt?: string
 }

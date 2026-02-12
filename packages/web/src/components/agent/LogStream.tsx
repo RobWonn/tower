@@ -280,6 +280,8 @@ export function LogStream({ logs }: LogStreamProps) {
             return <AssistantMessage key={log.id} content={log.content} />
 
           case LogType.Info:
+            // 跳过 token_usage_info 条目的文本渲染（已由 TokenUsageIndicator 聚合展示）
+            if (log.tokenUsage) return null
             return <AgentText key={log.id} content={log.content} />
 
           case LogType.Cursor:

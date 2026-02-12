@@ -17,6 +17,11 @@ export class SessionManager {
   private pipelines = new Map<string, AgentPipeline>();
 
   constructor(private readonly eventBus: EventBus) {
+    // Persist token usage from real-time patch stream
+    this.eventBus.on('session:patch', ({ sessionId, patch }) => {
+      this.extractAndPersistTokenUsage(sessionId, patch as Array<{ op: string; path: string; value?: Record<string, unknown> }>);
+    });
+
     this.eventBus.on('session:exit', ({ sessionId }) => {
       const pipeline = this.pipelines.get(sessionId);
       if (!pipeline) return;
@@ -185,11 +190,13 @@ export class SessionManager {
       msgStore.pushFinished();
       try {
         const snapshot = msgStore.getSnapshot();
+        const tokenUsage = this.extractTokenUsageFromSnapshot(snapshot);
         await prisma.session.update({
           where: { id },
           data: {
             status: SessionStatus.CANCELLED,
             logSnapshot: JSON.stringify(snapshot),
+            ...(tokenUsage ? { tokenUsage: JSON.stringify(tokenUsage) } : {}),
           },
         });
       } catch (error) {
@@ -266,13 +273,45 @@ export class SessionManager {
     const msgStore = sessionMsgStoreManager.get(sessionId);
     if (!msgStore) return;
     const snapshot = msgStore.getSnapshot();
+    const tokenUsage = this.extractTokenUsageFromSnapshot(snapshot);
     await prisma.session.update({
       where: { id: sessionId },
       data: {
         status: SessionStatus.COMPLETED,
         logSnapshot: JSON.stringify(snapshot),
+        ...(tokenUsage ? { tokenUsage: JSON.stringify(tokenUsage) } : {}),
       },
     });
+  }
+
+  private extractAndPersistTokenUsage(
+    sessionId: string,
+    patch: Array<{ op: string; path: string; value?: Record<string, unknown> }>
+  ): void {
+    for (const op of patch) {
+      if (op.op !== 'add' || !op.value) continue;
+      const value = op.value as { entryType?: string; metadata?: { tokenUsage?: { totalTokens?: number; modelContextWindow?: number } } };
+      if (value.entryType !== 'token_usage_info') continue;
+      const usage = value.metadata?.tokenUsage;
+      if (!usage || typeof usage.totalTokens !== 'number') continue;
+      prisma.session.update({
+        where: { id: sessionId },
+        data: { tokenUsage: JSON.stringify(usage) },
+      }).catch((err) => {
+        console.error(`[SessionManager] Failed to persist tokenUsage for ${sessionId}:`, err);
+      });
+      return; // Only persist the first token_usage_info per patch batch
+    }
+  }
+
+  private extractTokenUsageFromSnapshot(snapshot: NormalizedConversation): { totalTokens: number; modelContextWindow?: number } | null {
+    for (let i = snapshot.entries.length - 1; i >= 0; i--) {
+      const entry = snapshot.entries[i];
+      if (entry.entryType === 'token_usage_info' && entry.metadata?.tokenUsage?.totalTokens != null) {
+        return entry.metadata.tokenUsage as { totalTokens: number; modelContextWindow?: number };
+      }
+    }
+    return null;
   }
 
   /**

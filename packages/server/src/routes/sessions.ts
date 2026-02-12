@@ -5,6 +5,21 @@ import { AgentType } from '../types/index.js';
 import { sessionMsgStoreManager } from '../output/index.js';
 import { prisma } from '../utils/index.js';
 
+/**
+ * Parse tokenUsage JSON string on a session object (or nested sessions).
+ * Mutates in-place for convenience; returns the same reference.
+ */
+export function parseSessionTokenUsage<T extends { tokenUsage?: string | null }>(session: T): T & { tokenUsage?: Record<string, unknown> | null } {
+  if (typeof session.tokenUsage === 'string') {
+    try {
+      (session as Record<string, unknown>).tokenUsage = JSON.parse(session.tokenUsage);
+    } catch {
+      (session as Record<string, unknown>).tokenUsage = null;
+    }
+  }
+  return session as T & { tokenUsage?: Record<string, unknown> | null };
+}
+
 const createSessionSchema = z.object({
   agentType: z.nativeEnum(AgentType),
   prompt: z.string().min(1),
@@ -43,7 +58,7 @@ export async function sessionRoutes(app: FastifyInstance) {
         reply.code(404);
         return { error: 'Session not found' };
       }
-      return session;
+      return parseSessionTokenUsage(session);
     }
   );
 

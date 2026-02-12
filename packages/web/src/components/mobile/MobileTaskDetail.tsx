@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { SessionStatus } from '@agent-tower/shared'
-import { LogStream, TodoPanel } from '@/components/agent'
+import { LogStream, TodoPanel, TokenUsageIndicator } from '@/components/agent'
 import {
   ArrowLeft, ArrowUp, Paperclip, Play, Square,
   MessageSquare, FolderOpen, GitGraph, Code2, Trash2, MoreVertical,
@@ -13,6 +13,7 @@ import { useWorkspaces, useOpenInEditor } from '@/hooks/use-workspaces'
 import { useNormalizedLogs } from '@/lib/socket/hooks/useNormalizedLogs'
 import { useSendMessage, useStopSession } from '@/hooks/use-sessions'
 import { useTodos } from '@/hooks/use-todos'
+import { useTokenUsage } from '@/hooks/useTokenUsage'
 import { StartAgentDialog } from '@/components/task/StartAgentDialog'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import type { UITaskDetailData } from '@/components/task/types'
@@ -152,6 +153,15 @@ export function MobileTaskDetail({ task, onBack, onDeleteTask, isDeleting }: Mob
   })
 
   const { todos } = useTodos(entries)
+
+  // Token usage — 取最新一条，回退到持久化值
+  const initialTokenUsage = useMemo(() => {
+    if (!activeSession?.tokenUsage) return undefined
+    const tu = activeSession.tokenUsage
+    if (typeof tu.totalTokens === 'number') return tu as { totalTokens: number; modelContextWindow?: number }
+    return undefined
+  }, [activeSession?.tokenUsage])
+  const tokenUsage = useTokenUsage(logs, initialTokenUsage)
 
   useEffect(() => {
     if (sessionId && isConnected) attach()
@@ -409,9 +419,12 @@ export function MobileTaskDetail({ task, onBack, onDeleteTask, isDeleting }: Mob
                   style={{ minHeight: 48, maxHeight: 160 }}
                 />
                 <div className="flex items-center justify-between px-2 pb-2">
-                  <button className="p-1.5 text-neutral-400 active:text-neutral-600 rounded-lg">
-                    <Paperclip size={16} />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button className="p-1.5 text-neutral-400 active:text-neutral-600 rounded-lg">
+                      <Paperclip size={16} />
+                    </button>
+                    <TokenUsageIndicator usage={tokenUsage} />
+                  </div>
                   {isSessionActive && !input.trim() ? (
                     <button
                       onClick={handleStop}

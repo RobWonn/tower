@@ -4,6 +4,17 @@ import { spawn } from 'node:child_process';
 import { WorkspaceService } from '../services/workspace.service.js';
 import { ServiceError, NotFoundError } from '../errors.js';
 import { GitError } from '../git/worktree.manager.js';
+import { parseSessionTokenUsage } from './sessions.js';
+
+/**
+ * Parse tokenUsage on all sessions nested inside workspace(s).
+ */
+function parseWorkspaceSessions<T extends { sessions?: Array<{ tokenUsage?: string | null }> }>(ws: T): T {
+  if (ws.sessions) {
+    ws.sessions.forEach(parseSessionTokenUsage);
+  }
+  return ws;
+}
 
 // ── IDE 命令映射 ─────────────────────────────────────────────────────────────
 
@@ -82,7 +93,7 @@ export async function workspaceRoutes(app: FastifyInstance) {
         body.branchName
       );
       reply.code(201);
-      return workspace;
+      return parseWorkspaceSessions(workspace);
     }
   );
 
@@ -91,7 +102,8 @@ export async function workspaceRoutes(app: FastifyInstance) {
   app.get<{ Params: { taskId: string } }>(
     '/tasks/:taskId/workspaces',
     async (request) => {
-      return workspaceService.findByTaskId(request.params.taskId);
+      const workspaces = await workspaceService.findByTaskId(request.params.taskId);
+      return workspaces.map(parseWorkspaceSessions);
     }
   );
 
@@ -105,7 +117,7 @@ export async function workspaceRoutes(app: FastifyInstance) {
         reply.code(404);
         return errorResponse('Workspace not found', 'NOT_FOUND');
       }
-      return workspace;
+      return parseWorkspaceSessions(workspace);
     }
   );
 

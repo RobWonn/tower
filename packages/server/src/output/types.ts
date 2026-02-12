@@ -84,10 +84,8 @@ export interface NormalizedEntry {
     status?: ToolStatus
     fileChanges?: FileChange[]
     tokenUsage?: {
-      inputTokens?: number
-      outputTokens?: number
-      cacheReadTokens?: number
-      cacheWriteTokens?: number
+      totalTokens?: number
+      modelContextWindow?: number
     }
     error?: string
     /** Agent todo list (for todo_management action) */
@@ -180,23 +178,19 @@ export function createToolUse(
 
 // 辅助函数：创建 token 使用信息
 export function createTokenUsageInfo(
-  inputTokens: number,
-  outputTokens: number,
-  cacheReadTokens?: number,
-  cacheWriteTokens?: number,
+  totalTokens: number,
+  modelContextWindow?: number,
   id?: string
 ): NormalizedEntry {
   return {
     id: id || crypto.randomUUID(),
     timestamp: Date.now(),
     entryType: 'token_usage_info',
-    content: `Input: ${inputTokens}, Output: ${outputTokens}`,
+    content: `Tokens: ${totalTokens}${modelContextWindow ? ` / ${modelContextWindow}` : ''}`,
     metadata: {
       tokenUsage: {
-        inputTokens,
-        outputTokens,
-        cacheReadTokens,
-        cacheWriteTokens,
+        totalTokens,
+        modelContextWindow,
       },
     },
   }

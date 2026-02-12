@@ -22,6 +22,7 @@ import {
   createToolUse,
   createThinking,
   createErrorMessage,
+  createTokenUsageInfo,
 } from './types.js'
 import {
   EntryIndexProvider,
@@ -557,9 +558,32 @@ export class CursorAgentParser {
       case 'tool_call':
         this.handleToolCall(msg as CursorJsonToolCall);
         break;
-      case 'result':
-        // result 消息不做处理（仅元数据，与 Rust 实现一致）
-        break;
+      case 'result': {
+        // 从 result 消息中提取 token 用量（如果有）
+        const resultMsg = msg as CursorJsonResult
+        if (resultMsg.result && typeof resultMsg.result === 'object') {
+          const result = resultMsg.result as Record<string, unknown>
+          const usage = result.usage
+          if (usage && typeof usage === 'object') {
+            try {
+              const u = usage as Record<string, number>
+              const totalTokens =
+                (u.input_tokens || u.inputTokens || 0) +
+                (u.output_tokens || u.outputTokens || 0) +
+                (u.cache_read_input_tokens || 0) +
+                (u.cache_creation_input_tokens || 0)
+              const modelContextWindow = u.context_window || u.model_context_window || undefined
+              const entry = createTokenUsageInfo(totalTokens, modelContextWindow)
+              const index = this.indexProvider.next()
+              const patch = addNormalizedEntry(index, entry)
+              this.msgStore.pushPatch(patch)
+            } catch {
+              // 提取失败静默跳过
+            }
+          }
+        }
+        break
+      }
       default:
         // 未知类型 - 作为系统消息输出
         {
