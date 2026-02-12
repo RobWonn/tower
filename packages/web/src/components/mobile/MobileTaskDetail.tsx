@@ -106,7 +106,7 @@ export function MobileTaskDetail({ task, onBack }: MobileTaskDetailProps) {
 
   // ============ Log Stream ============
 
-  const { isConnected, isLoadingSnapshot, logs, entries, attach, detach } = useNormalizedLogs({
+  const { isConnected, isLoadingSnapshot, logs, entries, attach } = useNormalizedLogs({
     sessionId,
     onExit: useCallback(() => {
       queryClient.invalidateQueries({ queryKey: ['workspaces'] })
@@ -119,11 +119,9 @@ export function MobileTaskDetail({ task, onBack }: MobileTaskDetailProps) {
     if (sessionId && isConnected) attach()
   }, [sessionId, isConnected, attach])
 
-  const prevSessionIdRef = useRef(sessionId)
-  useEffect(() => {
-    if (prevSessionIdRef.current && prevSessionIdRef.current !== sessionId) detach()
-    prevSessionIdRef.current = sessionId
-  }, [sessionId, detach])
+  // Note: no explicit detach effect needed here.
+  // useNormalizedLogs' internal cleanup already sends UNSUBSCRIBE for the
+  // old sessionId when sessionId changes.
 
   // Reset scroll on task change
   useEffect(() => {

@@ -6,6 +6,9 @@ type EventMap = {
   'session:stopped': { sessionId: string };
   'session:sessionId': { sessionId: string; agentSessionId: string };
   'task:updated': { taskId: string; status: string };
+  // Standalone terminal events
+  'terminal:stdout': { terminalId: string; data: string };
+  'terminal:exit': { terminalId: string; exitCode?: number };
 };
 
 type EventName = keyof EventMap;

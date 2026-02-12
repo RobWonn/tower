@@ -9,6 +9,9 @@ export const ClientEvents = {
   UNSUBSCRIBE: 'unsubscribe',
   INPUT: 'input',
   RESIZE: 'resize',
+  // Standalone terminal events (client -> server)
+  TERMINAL_INPUT: 'terminal:input',
+  TERMINAL_RESIZE: 'terminal:resize',
 } as const;
 
 export const ServerEvents = {
@@ -21,15 +24,20 @@ export const ServerEvents = {
   SESSION_ERROR: 'session:error',
   TASK_UPDATED: 'task:updated',
   AGENT_STATUS_CHANGED: 'agent:status_changed',
+  // Standalone terminal events (server -> client)
+  TERMINAL_STDOUT: 'terminal:stdout',
+  TERMINAL_EXIT: 'terminal:exit',
+  TERMINAL_SUBSCRIBED: 'terminal:subscribed',
+  TERMINAL_UNSUBSCRIBED: 'terminal:unsubscribed',
 } as const;
 
 export interface SubscribePayload {
-  topic: 'session' | 'task' | 'agent';
+  topic: 'session' | 'task' | 'agent' | 'terminal';
   id?: string;
 }
 
 export interface UnsubscribePayload {
-  topic: 'session' | 'task' | 'agent';
+  topic: 'session' | 'task' | 'agent' | 'terminal';
   id?: string;
 }
 
@@ -97,6 +105,36 @@ export interface AgentStatusPayload {
 export interface TaskUpdatedPayload {
   taskId: string;
   status: string;
+}
+
+// Standalone terminal payloads
+export interface TerminalInputPayload {
+  terminalId: string;
+  data: string;
+}
+
+export interface TerminalResizePayload {
+  terminalId: string;
+  cols: number;
+  rows: number;
+}
+
+export interface TerminalStdoutPayload {
+  terminalId: string;
+  data: string;
+}
+
+export interface TerminalExitPayload {
+  terminalId: string;
+  exitCode: number;
+}
+
+export interface TerminalSubscribedPayload {
+  terminalId: string;
+}
+
+export interface TerminalUnsubscribedPayload {
+  terminalId: string;
 }
 
 export interface AckResponse<T = unknown> {

@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify'
 import { authMiddleware } from './middleware/index.js'
 import { SocketGateway } from './socket-gateway.js'
 import { NAMESPACE, type AgentStatusPayload } from './events.js'
-import { getEventBus, getSessionManager } from '../core/container.js'
+import { getEventBus, getSessionManager, getTerminalManager } from '../core/container.js'
 
 let io: Server | null = null
 let socketGateway: SocketGateway | null = null
@@ -21,7 +21,7 @@ export function getIO(): Server {
 /**
  * 初始化 Socket.IO 服务
  */
-export function initializeSocket(fastify: FastifyInstance): Server {
+export async function initializeSocket(fastify: FastifyInstance): Promise<Server> {
   // Clean up previous instance to prevent listener accumulation during dev hot-reload
   socketGateway?.destroy()
   socketGateway = null
@@ -39,7 +39,8 @@ export function initializeSocket(fastify: FastifyInstance): Server {
   const nsp = io.of(NAMESPACE)
   nsp.use(authMiddleware)
 
-  socketGateway = new SocketGateway(nsp, getEventBus(), getSessionManager())
+  const tm = await getTerminalManager()
+  socketGateway = new SocketGateway(nsp, getEventBus(), getSessionManager(), tm)
   nsp.on('connection', (socket) => {
     console.log(`[Socket] Connected: ${socket.id}`)
     socketGateway?.register(socket)
@@ -56,6 +57,13 @@ export function initializeSocket(fastify: FastifyInstance): Server {
 export async function closeSocket(): Promise<void> {
   if (io) {
     socketGateway?.destroy()
+    // Kill all standalone terminals on shutdown
+    try {
+      const tm = await getTerminalManager()
+      tm.destroyAll()
+    } catch {
+      // TerminalManager may not have been initialized; safe to ignore
+    }
     await new Promise<void>((resolve) => {
       io!.close(() => {
         console.log('[Socket.IO] Closed')

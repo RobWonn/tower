@@ -4,11 +4,13 @@
   "private": true,
   "description": "AI Agent 任务管理面板",
   "scripts": {
+    "setup": "pnpm install && pnpm db:push",
     "dev": "pnpm -r --parallel run dev",
     "build": "pnpm -r run build",
     "lint": "pnpm -r run lint",
     "clean": "pnpm -r run clean",
-    "db:generate": "pnpm --filter @agent-tower/server run db:generate"
+    "db:generate": "pnpm --filter @agent-tower/server run db:generate",
+    "db:push": "pnpm --filter @agent-tower/server run db:push"
   },
   "devDependencies": {
     "typescript": "^5.9.3"

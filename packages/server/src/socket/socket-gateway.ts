@@ -1,6 +1,7 @@
 import type { Namespace, Socket } from 'socket.io';
 import type { EventBus } from '../core/event-bus.js';
 import type { SessionManager } from '../services/session-manager.js';
+import type { TerminalManager } from '../services/terminal-manager.js';
 import {
   ClientEvents,
   ServerEvents,
@@ -9,6 +10,8 @@ import {
   type UnsubscribePayload,
   type SessionInputPayload,
   type SessionResizePayload,
+  type TerminalInputPayload,
+  type TerminalResizePayload,
   type AgentStatusPayload,
 } from './events.js';
 
@@ -18,7 +21,8 @@ export class SocketGateway {
   constructor(
     private readonly nsp: Namespace,
     private readonly eventBus: EventBus,
-    private readonly sessionManager: SessionManager
+    private readonly sessionManager: SessionManager,
+    private readonly terminalManager: TerminalManager
   ) {
     this.registerEventBusForwarders();
   }
@@ -31,6 +35,7 @@ export class SocketGateway {
   }
 
   register(socket: Socket): void {
+    // --- Subscribe / Unsubscribe ---
     socket.on(ClientEvents.SUBSCRIBE, (payload: SubscribePayload, ack?: (res: AckResponse) => void) => {
       this.handleSubscribe(socket, payload, ack);
     });
@@ -39,6 +44,7 @@ export class SocketGateway {
       this.handleUnsubscribe(socket, payload, ack);
     });
 
+    // --- Agent session I/O ---
     socket.on(ClientEvents.INPUT, (payload: SessionInputPayload) => {
       if (!payload?.sessionId || typeof payload.data !== 'string') return;
       try {
@@ -56,9 +62,34 @@ export class SocketGateway {
         console.error(`[SocketGateway] RESIZE error for session ${payload.sessionId}:`, err);
       }
     });
+
+    // --- Standalone terminal I/O ---
+    socket.on(ClientEvents.TERMINAL_INPUT, (payload: TerminalInputPayload) => {
+      if (!payload?.terminalId || typeof payload.data !== 'string') return;
+      try {
+        this.terminalManager.write(payload.terminalId, payload.data);
+      } catch (err) {
+        console.error(`[SocketGateway] TERMINAL_INPUT error for terminal ${payload.terminalId}:`, err);
+      }
+    });
+
+    socket.on(ClientEvents.TERMINAL_RESIZE, (payload: TerminalResizePayload) => {
+      if (!payload?.terminalId || typeof payload.cols !== 'number' || typeof payload.rows !== 'number') return;
+      try {
+        this.terminalManager.resize(payload.terminalId, payload.cols, payload.rows);
+      } catch (err) {
+        console.error(`[SocketGateway] TERMINAL_RESIZE error for terminal ${payload.terminalId}:`, err);
+      }
+    });
+
+    // --- Socket disconnect: clean up owned terminals ---
+    socket.on('disconnect', () => {
+      this.terminalManager.cleanupBySocket(socket.id);
+    });
   }
 
   private registerEventBusForwarders(): void {
+    // --- Session events (unchanged) ---
     const onStdout = ({ sessionId, data }: { sessionId: string; data: string }) => {
       this.nsp.to(`session:${sessionId}`).emit(ServerEvents.SESSION_STDOUT, { sessionId, data });
     };
@@ -78,11 +109,24 @@ export class SocketGateway {
       this.nsp.to(`task:${taskId}`).emit(ServerEvents.TASK_UPDATED, { taskId, status });
     };
 
+    // --- Terminal events (new) ---
+    const onTerminalStdout = ({ terminalId, data }: { terminalId: string; data: string }) => {
+      this.nsp.to(`terminal:${terminalId}`).emit(ServerEvents.TERMINAL_STDOUT, { terminalId, data });
+    };
+    const onTerminalExit = ({ terminalId, exitCode }: { terminalId: string; exitCode?: number }) => {
+      this.nsp.to(`terminal:${terminalId}`).emit(ServerEvents.TERMINAL_EXIT, {
+        terminalId,
+        exitCode: typeof exitCode === 'number' ? exitCode : 0,
+      });
+    };
+
     this.eventBus.on('session:stdout', onStdout);
     this.eventBus.on('session:patch', onPatch);
     this.eventBus.on('session:sessionId', onSessionId);
     this.eventBus.on('session:exit', onExit);
     this.eventBus.on('task:updated', onTask);
+    this.eventBus.on('terminal:stdout', onTerminalStdout);
+    this.eventBus.on('terminal:exit', onTerminalExit);
 
     this.cleanups.push(
       () => this.eventBus.off('session:stdout', onStdout),
@@ -90,6 +134,8 @@ export class SocketGateway {
       () => this.eventBus.off('session:sessionId', onSessionId),
       () => this.eventBus.off('session:exit', onExit),
       () => this.eventBus.off('task:updated', onTask),
+      () => this.eventBus.off('terminal:stdout', onTerminalStdout),
+      () => this.eventBus.off('terminal:exit', onTerminalExit),
     );
   }
 
@@ -105,6 +151,9 @@ export class SocketGateway {
     if (payload.topic === 'session' && payload.id) {
       socket.emit(ServerEvents.SESSION_SUBSCRIBED, { sessionId: payload.id });
     }
+    if (payload.topic === 'terminal' && payload.id) {
+      socket.emit(ServerEvents.TERMINAL_SUBSCRIBED, { terminalId: payload.id });
+    }
     ack?.({ success: true });
   }
 
@@ -115,6 +164,9 @@ export class SocketGateway {
     if (payload.topic === 'session' && payload.id) {
       socket.emit(ServerEvents.SESSION_UNSUBSCRIBED, { sessionId: payload.id });
     }
+    if (payload.topic === 'terminal' && payload.id) {
+      socket.emit(ServerEvents.TERMINAL_UNSUBSCRIBED, { terminalId: payload.id });
+    }
     ack?.({ success: true });
   }
 
@@ -124,6 +176,9 @@ export class SocketGateway {
     }
     if (payload.topic === 'task') {
       return payload.id ? `task:${payload.id}` : 'task:all';
+    }
+    if (payload.topic === 'terminal') {
+      return payload.id ? `terminal:${payload.id}` : 'terminal:all';
     }
     return payload.id ? `agent:${payload.id}` : 'agent:all';
   }

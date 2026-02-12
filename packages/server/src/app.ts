@@ -21,7 +21,7 @@ export async function buildApp() {
 
   // 服务器启动后初始化 Socket.IO 并清理过期 worktree
   app.addHook('onReady', async () => {
-    initializeSocket(app);
+    await initializeSocket(app);
 
     // 启动时清理过期 worktree 引用
     WorkspaceService.pruneAllWorktrees().catch((err) => {

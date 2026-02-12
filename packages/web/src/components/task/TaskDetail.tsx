@@ -190,7 +190,6 @@ export function TaskDetail({ task }: TaskDetailProps) {
     logs,
     entries,
     attach,
-    detach,
   } = useNormalizedLogs({
     sessionId,
     onExit: useCallback(() => {
@@ -209,14 +208,11 @@ export function TaskDetail({ task }: TaskDetailProps) {
     }
   }, [sessionId, isConnected, attach])
 
-  // Detach when sessionId changes (cleanup handled by useNormalizedLogs internally)
-  const prevSessionIdRef = useRef(sessionId)
-  useEffect(() => {
-    if (prevSessionIdRef.current && prevSessionIdRef.current !== sessionId) {
-      detach()
-    }
-    prevSessionIdRef.current = sessionId
-  }, [sessionId, detach])
+  // Note: no explicit detach effect needed here.
+  // useNormalizedLogs' internal cleanup already sends UNSUBSCRIBE for the
+  // old sessionId when sessionId changes (using the closure's stale value,
+  // which is correct). An external detach() here would use the NEW sessionId
+  // and incorrectly unsubscribe from the session we just attached to.
 
   // Reset scroll state when switching tasks — new task should always start at bottom
   const prevTaskIdRef = useRef(task?.id)

@@ -2,7 +2,7 @@ import React, { useState } from "react"
 import { Code2, Terminal, Globe, GitGraph } from "lucide-react"
 
 import { cn } from "@/lib/utils"
-import { TerminalView } from "./TerminalView"
+import { TerminalTabs } from "./TerminalTabs"
 import { EditorView } from "./EditorView"
 import { ChangesView } from "./ChangesView"
 
@@ -112,10 +112,10 @@ export const WorkspacePanel: React.FC<WorkspacePanelProps> = React.memo(
             <EditorView workingDir={workingDir} />
           )}
 
-          {/* Terminal Tab */}
+          {/* Terminal Tab — multi-terminal with standalone PTYs */}
           {activeTab === "terminal" && (
             <div className="h-full">
-              <TerminalView sessionId={sessionId} />
+              <TerminalTabs cwd={workingDir} />
             </div>
           )}
 

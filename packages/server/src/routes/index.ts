@@ -9,6 +9,7 @@ import { filesystemRoutes } from './filesystem.js';
 import { filesRoutes } from './files.js';
 import { gitRoutes } from './git.js';
 import { profileRoutes } from './profiles.js';
+import { terminalRoutes } from './terminals.js';
 
 export async function registerRoutes(app: FastifyInstance) {
   // 系统路由
@@ -40,4 +41,7 @@ export async function registerRoutes(app: FastifyInstance) {
 
   // Profile 配置路由
   await app.register(profileRoutes, { prefix: '/api' });
+
+  // Standalone terminal 路由
+  await app.register(terminalRoutes, { prefix: '/api' });
 }
