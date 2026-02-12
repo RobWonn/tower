@@ -530,7 +530,7 @@ export function TaskDetail({ task }: TaskDetailProps) {
                 value={input}
                 onChange={handleInput}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey && !e.repeat) {
+                  if (e.key === 'Enter' && !e.shiftKey && !e.repeat && !e.nativeEvent.isComposing) {
                     e.preventDefault()
                     handleSend()
                   }
