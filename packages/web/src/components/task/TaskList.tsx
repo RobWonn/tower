@@ -1,5 +1,7 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { ChevronDown, Plus, Layers, Check } from 'lucide-react'
+import { DndContext, DragOverlay, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
+import type { DragStartEvent, DragEndEvent } from '@dnd-kit/core'
 import { TaskGroup } from './TaskGroup'
 import type { UITask, UIProject } from './types'
 import { UITaskStatus } from './types'
@@ -16,6 +18,8 @@ interface TaskListProps {
   onCreateTask?: () => void
   /** 当前有 Agent 正在运行的任务 ID 集合 */
   activeTaskIds?: Set<string>
+  /** 拖拽变更任务状态回调 */
+  onTaskStatusChange?: (taskId: string, newStatus: UITaskStatus) => void
 }
 
 /** 空状态 placeholder - 提升到组件外避免重复创建 */
@@ -63,8 +67,36 @@ export function TaskList({
   onCreateProject,
   onCreateTask,
   activeTaskIds,
+  onTaskStatusChange,
 }: TaskListProps) {
   const [isFilterOpen, setIsFilterOpen] = useState(false)
+  const [activeDragTask, setActiveDragTask] = useState<UITask | null>(null)
+
+  // 需要一定拖拽距离才触发，避免点击误触
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+  )
+
+  const handleDragStart = useCallback((event: DragStartEvent) => {
+    const task = event.active.data.current?.task as UITask | undefined
+    if (task) setActiveDragTask(task)
+  }, [])
+
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    setActiveDragTask(null)
+
+    const { active, over } = event
+    if (!over) return
+
+    const task = active.data.current?.task as UITask | undefined
+    const fromStatus = active.data.current?.fromStatus as UITaskStatus | undefined
+    const toStatus = over.data.current?.status as UITaskStatus | undefined
+
+    if (!task || !fromStatus || !toStatus) return
+    if (fromStatus === toStatus) return
+
+    onTaskStatusChange?.(task.id, toStatus)
+  }, [onTaskStatusChange])
 
   // 直接在 render 中计算派生状态，不使用 useEffect
   const filteredTasks = filterProjectId
@@ -184,21 +216,32 @@ export function TaskList({
       </div>
 
       {/* 任务分组列表 */}
-      <div className="flex-1 overflow-y-auto py-4">
-        {TASK_GROUP_CONFIG.map(({ status, title, defaultOpen }) => (
-          <TaskGroup
-            key={status}
-            title={title}
-            tasks={grouped[status]}
-            status={status}
-            defaultOpen={defaultOpen}
-            selectedTaskId={selectedTaskId}
-            onSelectTask={onSelectTask}
-            projects={projects}
-            activeTaskIds={activeTaskIds}
-          />
-        ))}
-      </div>
+      <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+        <div className="flex-1 overflow-y-auto py-4">
+          {TASK_GROUP_CONFIG.map(({ status, title, defaultOpen }) => (
+            <TaskGroup
+              key={status}
+              title={title}
+              tasks={grouped[status]}
+              status={status}
+              defaultOpen={defaultOpen}
+              selectedTaskId={selectedTaskId}
+              onSelectTask={onSelectTask}
+              projects={projects}
+              activeTaskIds={activeTaskIds}
+              isDragging={activeDragTask !== null}
+            />
+          ))}
+        </div>
+
+        <DragOverlay dropAnimation={null}>
+          {activeDragTask ? (
+            <div className="bg-white shadow-lg rounded-md border border-neutral-200 px-4 py-2 text-sm max-w-[280px] opacity-90">
+              <span className="text-neutral-700 font-medium">{activeDragTask.title}</span>
+            </div>
+          ) : null}
+        </DragOverlay>
+      </DndContext>
 
       {/* Footer */}
       {filteredTasks.length > 0 ? (

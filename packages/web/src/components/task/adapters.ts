@@ -38,6 +38,20 @@ export function mapTaskStatusToUI(status: SharedTaskStatus): UITaskStatus {
   }
 }
 
+/** 将 UI 展示状态映射回后端 TaskStatus（用于拖拽变更状态） */
+export function mapUIStatusToTask(status: UITaskStatus): SharedTaskStatus {
+  switch (status) {
+    case UITaskStatus.Pending:
+      return SharedTaskStatus.TODO
+    case UITaskStatus.Running:
+      return SharedTaskStatus.IN_PROGRESS
+    case UITaskStatus.Review:
+      return SharedTaskStatus.IN_REVIEW
+    case UITaskStatus.Done:
+      return SharedTaskStatus.DONE
+  }
+}
+
 /**
  * 将 AgentType 枚举映射为用户友好的显示名称
  */

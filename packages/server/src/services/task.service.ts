@@ -29,16 +29,13 @@ interface FindTasksParams {
 
 /**
  * 合法的状态流转规则
- * - TODO → IN_PROGRESS
- * - IN_PROGRESS → IN_REVIEW | TODO (允许回退到 TODO)
- * - IN_REVIEW → DONE | IN_PROGRESS (允许打回)
- * - DONE → IN_PROGRESS (允许重新打开)
+ * 看板拖拽场景下允许任意状态互转，状态变更无危险副作用
  */
 const VALID_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
-  [TaskStatus.TODO]: [TaskStatus.IN_PROGRESS],
-  [TaskStatus.IN_PROGRESS]: [TaskStatus.IN_REVIEW, TaskStatus.TODO],
-  [TaskStatus.IN_REVIEW]: [TaskStatus.DONE, TaskStatus.IN_PROGRESS],
-  [TaskStatus.DONE]: [TaskStatus.IN_PROGRESS],
+  [TaskStatus.TODO]: [TaskStatus.IN_PROGRESS, TaskStatus.IN_REVIEW, TaskStatus.DONE],
+  [TaskStatus.IN_PROGRESS]: [TaskStatus.TODO, TaskStatus.IN_REVIEW, TaskStatus.DONE],
+  [TaskStatus.IN_REVIEW]: [TaskStatus.TODO, TaskStatus.IN_PROGRESS, TaskStatus.DONE],
+  [TaskStatus.DONE]: [TaskStatus.TODO, TaskStatus.IN_PROGRESS, TaskStatus.IN_REVIEW],
 };
 
 export class TaskService {

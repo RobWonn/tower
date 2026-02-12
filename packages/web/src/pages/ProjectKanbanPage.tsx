@@ -4,9 +4,11 @@ import type { Task, AgentType } from '@agent-tower/shared'
 import { TaskList } from '@/components/task'
 import { TaskDetail } from '@/components/task/TaskDetail'
 import type { UITaskDetailData } from '@/components/task/types'
-import { adaptProject, adaptTaskForList } from '@/components/task/adapters'
+import { UITaskStatus } from '@/components/task/types'
+import { toast } from 'sonner'
+import { adaptProject, adaptTaskForList, mapUIStatusToTask } from '@/components/task/adapters'
 import { useProjects, useCreateProject } from '@/hooks/use-projects'
-import { useTasks, useCreateTask, useDeleteTask } from '@/hooks/use-tasks'
+import { useTasks, useCreateTask, useDeleteTask, useUpdateTaskStatus } from '@/hooks/use-tasks'
 import { useCreateWorkspace } from '@/hooks/use-workspaces'
 import { useStartSession } from '@/hooks/use-sessions'
 import { useTaskRealtimeSync } from '@/lib/socket/hooks/useTaskRealtimeSync'
@@ -187,6 +189,7 @@ export function ProjectKanbanPage() {
   const createProject = useCreateProject()
   const createTask = useCreateTask(newTaskProjectId)
   const deleteTask = useDeleteTask()
+  const updateTaskStatus = useUpdateTaskStatus()
 
   const handleDeleteTask = useCallback((taskId: string) => {
     deleteTask.mutate(taskId, {
@@ -200,6 +203,17 @@ export function ProjectKanbanPage() {
       },
     })
   }, [deleteTask, selectedTaskId, queryClient])
+
+  const handleTaskStatusChange = useCallback((taskId: string, newStatus: UITaskStatus) => {
+    updateTaskStatus.mutate(
+      { id: taskId, status: mapUIStatusToTask(newStatus) },
+      {
+        onError: () => {
+          toast.error('状态变更失败，该操作不被允许')
+        },
+      },
+    )
+  }, [updateTaskStatus])
 
   // === rerender-defer-reads: 侧边栏宽度只在 resize handler 中读取 ===
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -405,6 +419,7 @@ export function ProjectKanbanPage() {
               onCreateProject={handleCreateProject}
               onCreateTask={handleCreateTask}
               activeTaskIds={activeTaskIds}
+              onTaskStatusChange={handleTaskStatusChange}
             />
           )}
         </div>
@@ -506,6 +521,7 @@ export function ProjectKanbanPage() {
             onCreateProject={handleCreateProject}
             onCreateTask={handleCreateTask}
             activeTaskIds={activeTaskIds}
+            onTaskStatusChange={handleTaskStatusChange}
           />
         )}
 
