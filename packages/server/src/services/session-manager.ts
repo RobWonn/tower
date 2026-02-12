@@ -31,6 +31,12 @@ export class SessionManager {
           console.error(`[SessionManager] Failed to persist completed snapshot for ${sessionId}:`, error);
         });
     });
+
+    this.eventBus.on('session:started', ({ sessionId }) => {
+      this.checkTaskAutoRevert(sessionId).catch((error) => {
+        console.error(`[SessionManager] checkTaskAutoRevert failed for session ${sessionId}:`, error);
+      });
+    });
   }
 
   async findById(id: string) {
@@ -313,6 +319,43 @@ export class SessionManager {
       }
     } catch (error) {
       console.error(`[SessionManager] checkTaskAutoAdvance failed for session ${sessionId}:`, error);
+    }
+  }
+
+  /**
+   * Session 启动时检查 Task 是否需要自动回退状态。
+   *
+   * 规则：当某个 Session 重新变为 RUNNING 时，如果所属 Task 处于
+   * IN_REVIEW 或 DONE，自动回退到 IN_PROGRESS，表示工作重新进行中。
+   */
+  private async checkTaskAutoRevert(sessionId: string): Promise<void> {
+    try {
+      const session = await prisma.session.findUnique({
+        where: { id: sessionId },
+        include: { workspace: { include: { task: true } } },
+      });
+      if (!session?.workspace?.task) return;
+
+      const task = session.workspace.task;
+      const revertableStatuses: string[] = [TaskStatus.IN_REVIEW, TaskStatus.DONE];
+      if (!revertableStatuses.includes(task.status)) return;
+
+      await prisma.task.update({
+        where: { id: task.id },
+        data: { status: TaskStatus.IN_PROGRESS },
+      });
+
+      this.eventBus.emit('task:updated', {
+        taskId: task.id,
+        projectId: task.projectId,
+        status: TaskStatus.IN_PROGRESS,
+      });
+
+      console.log(
+        `[SessionManager] Task ${task.id} auto-reverted from ${task.status} to IN_PROGRESS (session ${sessionId} started)`,
+      );
+    } catch (error) {
+      console.error(`[SessionManager] checkTaskAutoRevert failed for session ${sessionId}:`, error);
     }
   }
 }
