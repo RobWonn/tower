@@ -1,12 +1,14 @@
 import { useState, useCallback, useRef, useEffect, useMemo, lazy, Suspense } from 'react'
 import { useQueries, useQueryClient } from '@tanstack/react-query'
-import type { Task } from '@agent-tower/shared'
+import type { Task, AgentType } from '@agent-tower/shared'
 import { TaskList } from '@/components/task'
 import { TaskDetail } from '@/components/task/TaskDetail'
 import type { UITaskDetailData } from '@/components/task/types'
 import { adaptProject, adaptTaskForList } from '@/components/task/adapters'
 import { useProjects, useCreateProject } from '@/hooks/use-projects'
 import { useTasks, useCreateTask, useDeleteTask } from '@/hooks/use-tasks'
+import { useCreateWorkspace } from '@/hooks/use-workspaces'
+import { useStartSession } from '@/hooks/use-sessions'
 import { useTaskRealtimeSync } from '@/lib/socket/hooks/useTaskRealtimeSync'
 import { apiClient } from '@/lib/api-client'
 import { queryKeys } from '@/hooks/query-keys'
@@ -14,6 +16,24 @@ import { Settings } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { MobileTaskDetail } from '@/components/mobile'
+import { Select } from '@/components/ui/select'
+
+interface AgentInfo {
+  type: string
+  name: string
+  available: boolean
+  version?: string
+}
+
+type CreateStep = 'idle' | 'creating-task' | 'creating-workspace' | 'creating-session' | 'starting-session'
+
+const CREATE_STEP_LABEL: Record<CreateStep, string> = {
+  idle: 'Create & Start',
+  'creating-task': 'Creating Task...',
+  'creating-workspace': 'Creating Workspace...',
+  'creating-session': 'Creating Session...',
+  'starting-session': 'Starting Agent...',
+}
 
 // === bundle-dynamic-imports: Modal 组件懒加载 ===
 const Modal = lazy(() =>
@@ -85,6 +105,9 @@ export function ProjectKanbanPage() {
   const [newTaskTitle, setNewTaskTitle] = useState('')
   const [newTaskDescription, setNewTaskDescription] = useState('')
   const [newTaskProjectId, setNewTaskProjectId] = useState<string>('')
+  const [newTaskAgent, setNewTaskAgent] = useState<string>('')
+  const [availableAgents, setAvailableAgents] = useState<AgentInfo[]>([])
+  const [createStep, setCreateStep] = useState<CreateStep>('idle')
 
   // === rerender-use-ref-transient-values: resize 过程中的 mouse position 使用 ref ===
   const isDraggingRef = useRef(false)
@@ -223,7 +246,15 @@ export function ProjectKanbanPage() {
   const handleCreateTask = useCallback(() => {
     // 默认选中当前筛选的项目，或第一个项目
     setNewTaskProjectId(filterProjectId ?? projects[0]?.id ?? '')
+    setNewTaskAgent('')
+    setCreateStep('idle')
     setIsCreateTaskOpen(true)
+    // 加载可用 agents
+    apiClient.get<{ agents: AgentInfo[] }>('/demo/agents').then(res => {
+      setAvailableAgents(res.agents)
+      const available = res.agents.find(a => a.available)
+      if (available) setNewTaskAgent(available.type)
+    })
   }, [filterProjectId, projects])
 
   const handleCloseProjectModal = useCallback(() => {
@@ -233,11 +264,14 @@ export function ProjectKanbanPage() {
   }, [])
 
   const handleCloseTaskModal = useCallback(() => {
+    if (createStep !== 'idle') return
     setIsCreateTaskOpen(false)
     setNewTaskTitle('')
     setNewTaskDescription('')
     setNewTaskProjectId('')
-  }, [])
+    setNewTaskAgent('')
+    setCreateStep('idle')
+  }, [createStep])
 
   const handleSubmitProject = useCallback(async () => {
     if (!newProjectName.trim() || !newProjectRepoPath.trim()) return
@@ -252,18 +286,52 @@ export function ProjectKanbanPage() {
     }
   }, [newProjectName, newProjectRepoPath, createProject, handleCloseProjectModal])
 
+  const startSession = useStartSession()
+
   const handleSubmitTask = useCallback(async () => {
     if (!newTaskTitle.trim() || !newTaskProjectId) return
     try {
-      await createTask.mutateAsync({
+      // Step 1: 创建任务
+      setCreateStep('creating-task')
+      const task = await createTask.mutateAsync({
         title: newTaskTitle.trim(),
         description: newTaskDescription.trim() || undefined,
       })
-      handleCloseTaskModal()
+
+      // 如果选了 agent，自动启动
+      if (newTaskAgent) {
+        const prompt = [newTaskTitle.trim(), newTaskDescription.trim()].filter(Boolean).join('\n\n')
+
+        // Step 2: 创建 workspace
+        setCreateStep('creating-workspace')
+        const workspace = await apiClient.post<{ id: string }>(`/tasks/${task.id}/workspaces`, {})
+
+        // Step 3: 创建 session
+        setCreateStep('creating-session')
+        const session = await apiClient.post<{ id: string }>(
+          `/workspaces/${workspace.id}/sessions`,
+          { agentType: newTaskAgent as AgentType, prompt },
+        )
+
+        // Step 4: 启动 session
+        setCreateStep('starting-session')
+        await startSession.mutateAsync(session.id)
+
+        await queryClient.invalidateQueries({ queryKey: queryKeys.workspaces.list(task.id) })
+      }
+
+      // 选中新创建的任务
+      setSelectedTaskId(task.id)
+      setCreateStep('idle')
+      setIsCreateTaskOpen(false)
+      setNewTaskTitle('')
+      setNewTaskDescription('')
+      setNewTaskProjectId('')
+      setNewTaskAgent('')
     } catch {
-      // mutation error 由 TanStack Query 管理
+      setCreateStep('idle')
     }
-  }, [newTaskTitle, newTaskDescription, newTaskProjectId, createTask, handleCloseTaskModal])
+  }, [newTaskTitle, newTaskDescription, newTaskProjectId, newTaskAgent, createTask, startSession, queryClient])
 
   const isLoading = isProjectsLoading || isFilteredTasksLoading || isAllTasksLoading
 
@@ -363,30 +431,37 @@ export function ProjectKanbanPage() {
           </Modal>
           <Modal isOpen={isCreateTaskOpen} onClose={handleCloseTaskModal} title="Create New Task"
             action={<>
-              <button onClick={handleCloseTaskModal} className="px-4 py-2 text-sm text-neutral-600">Cancel</button>
-              <button onClick={handleSubmitTask} disabled={!newTaskTitle.trim() || !newTaskProjectId || createTask.isPending}
-                className={`px-4 py-2 text-sm font-medium rounded-lg ${newTaskTitle.trim() && newTaskProjectId && !createTask.isPending ? 'bg-neutral-900 text-white' : 'bg-neutral-100 text-neutral-400 cursor-not-allowed'}`}>
-                {createTask.isPending ? 'Creating...' : 'Create'}
+              <button onClick={handleCloseTaskModal} disabled={createStep !== 'idle'} className="px-4 py-2 text-sm text-neutral-600 disabled:opacity-50">Cancel</button>
+              <button onClick={handleSubmitTask} disabled={!newTaskTitle.trim() || !newTaskProjectId || createStep !== 'idle'}
+                className={`px-4 py-2 text-sm font-medium rounded-lg ${newTaskTitle.trim() && newTaskProjectId && createStep === 'idle' ? 'bg-neutral-900 text-white' : 'bg-neutral-100 text-neutral-400 cursor-not-allowed'}`}>
+                {CREATE_STEP_LABEL[createStep]}
               </button>
             </>}>
             <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-neutral-700 mb-1.5">Project</label>
-                <select value={newTaskProjectId} onChange={e => setNewTaskProjectId(e.target.value)}
-                  className="w-full px-3 py-2 border border-neutral-200 rounded-lg text-sm focus:outline-none focus:border-neutral-400 bg-white">
-                  <option value="">Select a project...</option>
-                  {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
+              <div className="flex gap-3">
+                <div className="flex-1 min-w-0">
+                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">Project</label>
+                  <Select value={newTaskProjectId} onChange={setNewTaskProjectId}
+                    options={projects.map(p => ({ value: p.id, label: p.name }))}
+                    placeholder="Select project..." disabled={createStep !== 'idle'} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">Agent</label>
+                  <Select value={newTaskAgent} onChange={setNewTaskAgent}
+                    options={availableAgents.map(a => ({ value: a.type, label: a.name + (a.available && a.version ? ` (${a.version})` : ''), disabled: !a.available }))}
+                    placeholder={availableAgents.length === 0 ? 'Loading...' : 'Select agent...'} disabled={createStep !== 'idle'} />
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-neutral-700 mb-1.5">Task Title</label>
                 <input type="text" value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)} placeholder="e.g., Implement login flow"
-                  className="w-full px-3 py-2 border border-neutral-200 rounded-lg text-sm focus:outline-none focus:border-neutral-400" />
+                  className="w-full px-3 py-2 border border-neutral-200 rounded-lg text-sm focus:outline-none focus:border-neutral-400" disabled={createStep !== 'idle'}
+                  onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) handleSubmitTask() }} />
               </div>
               <div>
                 <label className="block text-sm font-medium text-neutral-700 mb-1.5">Description</label>
                 <textarea rows={3} value={newTaskDescription} onChange={e => setNewTaskDescription(e.target.value)} placeholder="Optional..."
-                  className="w-full px-3 py-2 border border-neutral-200 rounded-lg text-sm focus:outline-none focus:border-neutral-400 resize-none" />
+                  className="w-full px-3 py-2 border border-neutral-200 rounded-lg text-sm focus:outline-none focus:border-neutral-400 resize-none" disabled={createStep !== 'idle'} />
               </div>
             </div>
           </Modal>
@@ -518,39 +593,55 @@ export function ProjectKanbanPage() {
             <>
               <button
                 onClick={handleCloseTaskModal}
-                className="px-4 py-2 text-sm text-neutral-600 hover:text-neutral-900 transition-colors"
+                disabled={createStep !== 'idle'}
+                className="px-4 py-2 text-sm text-neutral-600 hover:text-neutral-900 transition-colors disabled:opacity-50"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSubmitTask}
-                disabled={!newTaskTitle.trim() || !newTaskProjectId || createTask.isPending}
+                disabled={!newTaskTitle.trim() || !newTaskProjectId || createStep !== 'idle'}
                 className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${
-                  newTaskTitle.trim() && newTaskProjectId && !createTask.isPending
+                  newTaskTitle.trim() && newTaskProjectId && createStep === 'idle'
                     ? 'bg-neutral-900 text-white hover:bg-black'
                     : 'bg-neutral-100 text-neutral-400 cursor-not-allowed'
                 }`}
               >
-                {createTask.isPending ? 'Creating...' : 'Create Task'}
+                {CREATE_STEP_LABEL[createStep]}
               </button>
             </>
           }
         >
           <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-neutral-700 mb-1.5">
-                Project
-              </label>
-              <select
-                value={newTaskProjectId}
-                onChange={e => setNewTaskProjectId(e.target.value)}
-                className="w-full px-3 py-2 border border-neutral-200 rounded-lg text-sm focus:outline-none focus:border-neutral-400 transition-colors bg-white"
-              >
-                <option value="">Select a project...</option>
-                {projects.map(p => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
-              </select>
+            <div className="flex gap-3">
+              <div className="flex-1 min-w-0">
+                <label className="block text-sm font-medium text-neutral-700 mb-1.5">
+                  Project
+                </label>
+                <Select
+                  value={newTaskProjectId}
+                  onChange={setNewTaskProjectId}
+                  options={projects.map(p => ({ value: p.id, label: p.name }))}
+                  placeholder="Select project..."
+                  disabled={createStep !== 'idle'}
+                />
+              </div>
+              <div className="flex-1 min-w-0">
+                <label className="block text-sm font-medium text-neutral-700 mb-1.5">
+                  Agent
+                </label>
+                <Select
+                  value={newTaskAgent}
+                  onChange={setNewTaskAgent}
+                  options={availableAgents.map(a => ({
+                    value: a.type,
+                    label: a.name + (a.available && a.version ? ` (${a.version})` : ''),
+                    disabled: !a.available,
+                  }))}
+                  placeholder={availableAgents.length === 0 ? 'Loading...' : 'Select agent...'}
+                  disabled={createStep !== 'idle'}
+                />
+              </div>
             </div>
             <div>
               <label className="block text-sm font-medium text-neutral-700 mb-1.5">
@@ -562,6 +653,7 @@ export function ProjectKanbanPage() {
                 onChange={e => setNewTaskTitle(e.target.value)}
                 placeholder="e.g., Implement login flow"
                 className="w-full px-3 py-2 border border-neutral-200 rounded-lg text-sm focus:outline-none focus:border-neutral-400 transition-colors"
+                disabled={createStep !== 'idle'}
                 onKeyDown={e => {
                   if (e.key === 'Enter' && !e.nativeEvent.isComposing) handleSubmitTask()
                 }}
@@ -577,6 +669,7 @@ export function ProjectKanbanPage() {
                 onChange={e => setNewTaskDescription(e.target.value)}
                 placeholder="Optional description..."
                 className="w-full px-3 py-2 border border-neutral-200 rounded-lg text-sm focus:outline-none focus:border-neutral-400 transition-colors resize-none"
+                disabled={createStep !== 'idle'}
               />
             </div>
             {createTask.isError && (
