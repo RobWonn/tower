@@ -291,10 +291,35 @@ export function MobileTaskDetail({ task, onBack, onDeleteTask, isDeleting }: Mob
     openInEditorMutation.mutate({ workspaceId: activeWorkspaceId })
   }, [activeWorkspaceId, openInEditorMutation])
 
+  // ============ Visual Viewport (iOS keyboard fix) ============
+  // iOS Safari doesn't shrink dvh when the virtual keyboard opens.
+  // Instead it scrolls the page up, leaving blank space below.
+  // We use position:fixed and pin the container to the actual visible area
+  // using visualViewport's height + offsetTop.
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const vv = window.visualViewport
+    if (!vv) return
+
+    const update = () => {
+      if (!containerRef.current) return
+      containerRef.current.style.height = `${vv.height}px`
+      containerRef.current.style.top = `${vv.offsetTop}px`
+    }
+
+    vv.addEventListener('resize', update)
+    vv.addEventListener('scroll', update)
+    return () => {
+      vv.removeEventListener('resize', update)
+      vv.removeEventListener('scroll', update)
+    }
+  }, [])
+
   // ============ Render ============
 
   return (
-    <div className="flex flex-col h-dvh bg-white overflow-hidden">
+    <div ref={containerRef} className="fixed inset-x-0 top-0 flex flex-col h-dvh bg-white overflow-hidden">
       {/* Header */}
       <header className="shrink-0 bg-white border-b border-neutral-200 z-20">
         <div className="flex items-center h-12 px-3 gap-2">
@@ -406,7 +431,7 @@ export function MobileTaskDetail({ task, onBack, onDeleteTask, isDeleting }: Mob
           {/* Todo Panel */}
           {todos.length > 0 && (
             <div className="px-4 pt-2 pb-1 bg-white shrink-0 border-t border-neutral-100">
-              <TodoPanel todos={todos} />
+              <TodoPanel todos={todos} compact />
             </div>
           )}
 
@@ -426,7 +451,7 @@ export function MobileTaskDetail({ task, onBack, onDeleteTask, isDeleting }: Mob
                   }}
                   rows={1}
                   placeholder={!isSessionActive ? 'Continue conversation...' : 'Message Agent...'}
-                  className="w-full px-3 pt-3 pb-1 bg-transparent border-none focus:outline-none resize-none text-sm text-neutral-900 placeholder-neutral-400"
+                  className="w-full px-3 pt-3 pb-1 bg-transparent border-none focus:outline-none resize-none text-base text-neutral-900 placeholder-neutral-400"
                   style={{ minHeight: 48, maxHeight: 160 }}
                 />
                 <div className="flex items-center justify-between px-2 pb-2">

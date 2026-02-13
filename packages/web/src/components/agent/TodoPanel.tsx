@@ -14,10 +14,13 @@ function getStatusIcon(status?: string) {
 
 interface TodoPanelProps {
   todos: TodoItem[]
+  /** Compact mode for mobile — defaults to collapsed, constrained height */
+  compact?: boolean
 }
 
-export function TodoPanel({ todos }: TodoPanelProps) {
+export function TodoPanel({ todos, compact }: TodoPanelProps) {
   const [isOpen, setIsOpen] = useState(() => {
+    if (compact) return false
     const stored = localStorage.getItem(TODO_PANEL_OPEN_KEY)
     return stored === null ? true : stored === 'true'
   })
@@ -36,7 +39,8 @@ export function TodoPanel({ todos }: TodoPanelProps) {
       open={isOpen}
       onToggle={(e) => setIsOpen((e.target as HTMLDetailsElement).open)}
     >
-      <summary className="list-none cursor-pointer select-none">
+      {/* [style] hide iOS Safari default disclosure triangle */}
+      <summary className="list-none cursor-pointer select-none [&::-webkit-details-marker]:hidden">
         <div className="bg-neutral-50 border border-neutral-100 rounded-xl px-4 py-3 text-sm flex items-center justify-between hover:bg-neutral-100 transition-colors">
           <span className="text-neutral-600 font-medium">
             待办事项 ({completedCount}/{todos.length})
@@ -47,17 +51,17 @@ export function TodoPanel({ todos }: TodoPanelProps) {
           />
         </div>
       </summary>
-      <div className="px-3 pt-2 pb-1">
-        <ul className="space-y-1.5" role="list" aria-label="Agent todo list">
+      <div className={`px-3 pt-2 pb-1 ${compact ? 'max-h-32 overflow-y-auto' : ''}`}>
+        <ul className={compact ? 'space-y-0.5' : 'space-y-1.5'} role="list" aria-label="Agent todo list">
           {todos.map((todo, index) => (
             <li
               key={`${todo.content}-${index}`}
-              className="flex items-start gap-2 py-1"
+              className={`flex items-start gap-2 ${compact ? 'py-0.5' : 'py-1'}`}
             >
               <span className="mt-0.5 h-4 w-4 flex items-center justify-center shrink-0">
                 {getStatusIcon(todo.status)}
               </span>
-              <span className="text-sm leading-5 text-neutral-700 wrap-break-word">
+              <span className={`${compact ? 'text-xs leading-4' : 'text-sm leading-5'} text-neutral-700 wrap-break-word`}>
                 {todo.status?.toLowerCase() === 'cancelled' ? (
                   <s className="text-neutral-400">{todo.content}</s>
                 ) : (
