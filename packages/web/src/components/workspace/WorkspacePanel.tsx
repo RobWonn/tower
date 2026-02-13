@@ -29,15 +29,15 @@ interface TabConfig {
 }
 
 const DESKTOP_TABS: TabConfig[] = [
-  { key: "terminal", label: "Terminal", icon: <Terminal size={14} /> },
-  { key: "editor", label: "Editor", icon: <Code2 size={14} /> },
-  { key: "preview", label: "Preview", icon: <Globe size={14} /> },
   { key: "changes", label: "Changes", icon: <GitGraph size={14} /> },
+  { key: "editor", label: "Editor", icon: <Code2 size={14} /> },
+  { key: "terminal", label: "Terminal", icon: <Terminal size={14} /> },
+  { key: "preview", label: "Preview", icon: <Globe size={14} /> },
 ]
 
 const MOBILE_TABS: TabConfig[] = [
-  { key: "terminal", label: "Terminal", icon: <Terminal size={14} /> },
   { key: "editor", label: "Editor", icon: <Code2 size={14} /> },
+  { key: "terminal", label: "Terminal", icon: <Terminal size={14} /> },
   { key: "preview", label: "Preview", icon: <Globe size={14} /> },
 ]
 
@@ -88,7 +88,7 @@ export const WorkspacePanel: React.FC<WorkspacePanelProps> = React.memo(
     hideChanges,
   }) {
     const tabs = hideChanges ? MOBILE_TABS : DESKTOP_TABS
-    const [activeTab, setActiveTab] = useState<WorkspaceTab>(hideChanges ? "terminal" : "terminal")
+    const [activeTab, setActiveTab] = useState<WorkspaceTab>(hideChanges ? "editor" : "changes")
 
     return (
       <div className={cn("flex flex-col h-full bg-white", className)}>
