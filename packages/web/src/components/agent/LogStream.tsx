@@ -89,7 +89,7 @@ const ThinkingBlock = memo(({ content, isOpenDefault = false }: { content: strin
   const [isOpen, setIsOpen] = useState(isOpenDefault)
 
   return (
-    <div className="mb-4">
+    <div className="mb-2">
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="flex items-center gap-2 text-xs font-medium text-neutral-400 hover:text-neutral-600 transition-colors select-none"
@@ -128,7 +128,7 @@ const ToolBlock = memo(({ title, content, type }: { title: string; content: stri
 
   // Tool: pill 按钮 + 暗色代码展开区域
   return (
-    <div className="mb-3 group">
+    <div className="mb-2 group">
       <button
         onClick={() => setIsOpen(!isOpen)}
         className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-mono w-full text-left transition-all ${
@@ -246,7 +246,7 @@ ToolGroupItem.displayName = 'ToolGroupItem'
 
 // 4. Agent 主文本 — 纯文本无图标
 const AgentText = memo(({ content }: { content: string }) => (
-  <div className="text-sm text-neutral-800 leading-7 mb-4 whitespace-pre-wrap animate-in fade-in duration-500">
+  <div className="text-sm text-neutral-800 leading-7 mb-2 whitespace-pre-wrap animate-in fade-in duration-500">
     {content}
   </div>
 ))
@@ -254,7 +254,7 @@ AgentText.displayName = 'AgentText'
 
 // 5. Assistant Message — Streamdown 渲染 markdown
 const AssistantMessage = memo(({ content }: { content: string }) => (
-  <div className="text-sm text-neutral-800 leading-7 mb-4 animate-in fade-in duration-500">
+  <div className="text-sm text-neutral-800 leading-7 mb-2 animate-in fade-in duration-500">
     <Streamdown>{content}</Streamdown>
   </div>
 ))
