@@ -11,6 +11,7 @@ import {
 import type { NormalizedConversation } from '../output/index.js';
 import type { SpawnedChild } from '../executors/index.js';
 import { AgentPipeline, type OutputParser } from '../pipeline/agent-pipeline.js';
+import { execGit } from '../git/git-cli.js';
 import type { EventBus } from '../core/event-bus.js';
 
 const DEBUG_SNAPSHOT = process.env.DEBUG_SNAPSHOT === 'true';
@@ -48,10 +49,11 @@ export class SessionManager {
         pipeline.destroy();
         this.pipelines.delete(sessionId);
       }
-      this.flushSnapshotPersist(sessionId, SessionStatus.COMPLETED)
+      this.autoCommitChanges(sessionId)
+        .then(() => this.flushSnapshotPersist(sessionId, SessionStatus.COMPLETED))
         .then(() => this.checkTaskAutoAdvance(sessionId))
         .catch((error) => {
-          console.error(`[SessionManager] Failed to persist completed snapshot for ${sessionId}:`, error);
+          console.error(`[SessionManager] post-exit handling failed for ${sessionId}:`, error);
         });
     });
 
@@ -302,6 +304,40 @@ export class SessionManager {
       return createCursorAgentParser(msgStore, workingDir);
     }
     return null;
+  }
+
+  /**
+   * Agent 进程退出后自动提交未保存的变更。
+   * 保证 worktree 始终干净的兜底机制，最终会被 squash merge 合并。
+   * 参考: vibe-kanban crates/local-deployment/src/container.rs:496-505
+   */
+  private async autoCommitChanges(sessionId: string): Promise<void> {
+    try {
+      const session = await prisma.session.findUnique({
+        where: { id: sessionId },
+        include: { workspace: true },
+      });
+      if (!session?.workspace?.worktreePath) return;
+
+      const worktreePath = session.workspace.worktreePath;
+
+      const status = await execGit(worktreePath, ['status', '--porcelain']);
+      if (!status.trim()) return;
+
+      await execGit(worktreePath, ['add', '-A']);
+      await execGit(worktreePath, [
+        'commit', '-m',
+        `auto-commit: uncommitted changes from session ${sessionId.slice(0, 8)}`,
+      ]);
+
+      console.log(`[SessionManager] Auto-committed changes for session ${sessionId}`);
+    } catch (error) {
+      // auto-commit 失败不应阻断后续流程
+      console.warn(
+        `[SessionManager] Auto-commit failed for session ${sessionId}:`,
+        error instanceof Error ? error.message : error
+      );
+    }
   }
 
   private async persistCompletedSnapshot(sessionId: string): Promise<void> {

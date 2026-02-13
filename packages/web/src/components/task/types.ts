@@ -61,6 +61,9 @@ export interface UITaskDetailData {
   projectColor: string
   title: string
   status: UITaskStatus
+  /** 当前工作分支（来自活跃 Workspace） */
   branch: string
+  /** 项目主分支（如 main） */
+  mainBranch: string
   description: string
 }

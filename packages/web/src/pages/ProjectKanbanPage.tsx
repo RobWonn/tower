@@ -181,6 +181,7 @@ export function ProjectKanbanPage() {
       title: uiTask.title,
       status: uiTask.status,
       branch: uiTask.branch,
+      mainBranch: project?.mainBranch ?? 'main',
       description: uiTask.description,
     }
   }, [selectedTaskId, uiTasks, projects])

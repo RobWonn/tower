@@ -83,7 +83,7 @@ const ComingSoonPlaceholder: React.FC<{
 export const WorkspacePanel: React.FC<WorkspacePanelProps> = React.memo(
   function WorkspacePanel({
     className,
-    sessionId,
+    sessionId: _sessionId,
     workingDir,
     hideChanges,
   }) {

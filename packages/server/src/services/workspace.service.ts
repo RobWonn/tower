@@ -5,6 +5,7 @@ import { execGit } from '../git/git-cli.js';
 import { NotFoundError, ServiceError } from '../errors.js';
 import { getSessionManager, getEventBus } from '../core/container.js';
 import type { EventBus } from '../core/event-bus.js';
+import type { GitOperationStatus } from '@agent-tower/shared';
 
 export class WorkspaceService {
   private sessionService = getSessionManager();
@@ -57,6 +58,42 @@ export class WorkspaceService {
     }
 
     const worktreeManager = new WorktreeManager(task.project.repoPath);
+
+    // 查找可复用的 MERGED workspace（branch 已通过 update-ref 保留）
+    if (!branchName) {
+      const mergedWorkspace = await prisma.workspace.findFirst({
+        where: { taskId, status: WorkspaceStatus.MERGED },
+        orderBy: { updatedAt: 'desc' },
+      });
+
+      if (mergedWorkspace) {
+        const worktreePath = await worktreeManager.ensureWorktreeExists(mergedWorkspace.branchName);
+
+        const updated = await prisma.workspace.update({
+          where: { id: mergedWorkspace.id },
+          data: {
+            status: WorkspaceStatus.ACTIVE,
+            worktreePath,
+          },
+          include: { sessions: true, task: { include: { project: true } } },
+        });
+
+        // Task 状态回退到 IN_PROGRESS
+        if (task.status !== TaskStatus.IN_PROGRESS && task.status !== TaskStatus.TODO) {
+          await prisma.task.update({
+            where: { id: taskId },
+            data: { status: TaskStatus.IN_PROGRESS },
+          });
+          this.eventBus.emit('task:updated', {
+            taskId,
+            projectId: task.projectId,
+            status: TaskStatus.IN_PROGRESS,
+          });
+        }
+
+        return updated;
+      }
+    }
 
     // 先在数据库创建记录以获取 ID（用于生成默认分支名）
     const workspace = await prisma.workspace.create({
@@ -177,6 +214,67 @@ export class WorkspaceService {
 
   // ── Merge ────────────────────────────────────────────────────────────────────
 
+  // ── Git Operations ──────────────────────────────────────────────────────────
+
+  /**
+   * Rebase 工作空间分支到最新的基础分支
+   */
+  async rebase(id: string): Promise<void> {
+    const workspace = await prisma.workspace.findUnique({
+      where: { id },
+      include: { task: { include: { project: true } } },
+    });
+
+    if (!workspace) {
+      throw new NotFoundError('Workspace', id);
+    }
+
+    const worktreeManager = new WorktreeManager(workspace.task.project.repoPath);
+    await worktreeManager.rebase(
+      workspace.worktreePath,
+      workspace.task.project.mainBranch
+    );
+  }
+
+  /**
+   * 获取工作空间的 Git 操作状态
+   */
+  async getGitStatus(id: string): Promise<GitOperationStatus> {
+    const workspace = await prisma.workspace.findUnique({
+      where: { id },
+      include: { task: { include: { project: true } } },
+    });
+
+    if (!workspace) {
+      throw new NotFoundError('Workspace', id);
+    }
+
+    const worktreeManager = new WorktreeManager(workspace.task.project.repoPath);
+    return worktreeManager.getGitOperationStatus(
+      workspace.worktreePath,
+      workspace.task.project.mainBranch
+    );
+  }
+
+  /**
+   * 中止工作空间当前进行中的 Git 操作
+   */
+  async abortOperation(id: string): Promise<void> {
+    const workspace = await prisma.workspace.findUnique({
+      where: { id },
+      include: { task: { include: { project: true } } },
+    });
+
+    if (!workspace) {
+      throw new NotFoundError('Workspace', id);
+    }
+
+    const worktreeManager = new WorktreeManager(workspace.task.project.repoPath);
+    await worktreeManager.abortOperation(workspace.worktreePath);
+  }
+
+  // ── Merge (squash) ──────────────────────────────────────────────────────────
+
   /**
    * 合并 Workspace 到主分支（squash merge）
    *
@@ -193,31 +291,28 @@ export class WorkspaceService {
     }
 
     const worktreeManager = new WorktreeManager(workspace.task.project.repoPath);
-    await worktreeManager.merge(
+    const { sha } = await worktreeManager.merge(
       workspace.worktreePath,
       workspace.task.project.mainBranch
     );
 
-    // 获取 squash commit SHA（merge 后 HEAD 即为 squash commit）
-    const sha = (
-      await execGit(workspace.task.project.repoPath, ['rev-parse', 'HEAD'])
-    ).trim();
-
+    // 更新 workspace：标记 MERGED，清空 worktreePath（物理目录已删除）
     await prisma.workspace.update({
       where: { id },
-      data: { status: WorkspaceStatus.MERGED },
+      data: { status: WorkspaceStatus.MERGED, worktreePath: '' },
     });
 
-    // 自动推进 Task 状态：如果 Task 处于 IN_PROGRESS，合并后自动流转到 IN_REVIEW
-    if (workspace.task.status === TaskStatus.IN_PROGRESS) {
+    // Task 推进到 DONE
+    const advanceableStatuses = [TaskStatus.IN_PROGRESS, TaskStatus.IN_REVIEW];
+    if (advanceableStatuses.includes(workspace.task.status as TaskStatus)) {
       await prisma.task.update({
         where: { id: workspace.task.id },
-        data: { status: TaskStatus.IN_REVIEW },
+        data: { status: TaskStatus.DONE },
       });
       this.eventBus.emit('task:updated', {
         taskId: workspace.task.id,
         projectId: workspace.task.projectId,
-        status: TaskStatus.IN_REVIEW,
+        status: TaskStatus.DONE,
       });
     }
 
@@ -287,10 +382,23 @@ export class WorkspaceService {
     for (const workspace of workspaces) {
       try {
         const worktreeManager = new WorktreeManager(workspace.task.project.repoPath);
-        await worktreeManager.remove(workspace.worktreePath);
+
+        // 清理残留 worktree（如果还存在）
+        if (workspace.worktreePath) {
+          await worktreeManager.remove(workspace.worktreePath);
+        }
+
+        // Task 已 DONE，branch 不再需要，删除
+        if (workspace.branchName) {
+          try {
+            await execGit(workspace.task.project.repoPath, ['branch', '-D', workspace.branchName]);
+          } catch {
+            // branch 可能已不存在，忽略
+          }
+        }
       } catch (err) {
         console.warn(
-          `[WorkspaceService] cleanup: failed to remove worktree for workspace ${workspace.id}: ${err instanceof Error ? err.message : err}`
+          `[WorkspaceService] cleanup: failed for workspace ${workspace.id}: ${err instanceof Error ? err.message : err}`
         );
       }
 

@@ -24,6 +24,7 @@ export const queryKeys = {
     list: (taskId: string) => ['workspaces', 'list', taskId] as const,
     detail: (id: string) => ['workspaces', 'detail', id] as const,
     diff: (id: string) => ['workspaces', 'diff', id] as const,
+    gitStatus: (id: string) => ['workspaces', 'gitStatus', id] as const,
   },
 
   sessions: {

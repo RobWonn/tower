@@ -1,5 +1,6 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import { ConflictOp } from '@agent-tower/shared';
 
 const execFileAsync = promisify(execFile);
 
@@ -61,8 +62,9 @@ export class WorktreeDirtyError extends GitError {
 
 export class MergeConflictError extends GitError {
   conflictedFiles: string[];
+  conflictOp: ConflictOp;
 
-  constructor(conflictedFiles: string[]) {
+  constructor(conflictedFiles: string[], conflictOp: ConflictOp = ConflictOp.MERGE) {
     const fileList = conflictedFiles.join(', ');
     super(
       `Merge conflict in files: ${fileList}`,
@@ -70,6 +72,14 @@ export class MergeConflictError extends GitError {
     );
     this.name = 'MergeConflictError';
     this.conflictedFiles = conflictedFiles;
+    this.conflictOp = conflictOp;
+  }
+}
+
+export class RebaseInProgressError extends GitError {
+  constructor() {
+    super('Rebase in progress; resolve or abort it before retrying', 'REBASE_IN_PROGRESS');
+    this.name = 'RebaseInProgressError';
   }
 }
 

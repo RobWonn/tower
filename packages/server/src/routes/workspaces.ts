@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { spawn } from 'node:child_process';
 import { WorkspaceService } from '../services/workspace.service.js';
 import { ServiceError, NotFoundError } from '../errors.js';
-import { GitError } from '../git/worktree.manager.js';
+import { GitError, MergeConflictError, RebaseInProgressError } from '../git/worktree.manager.js';
 import { parseSessionTokenUsage } from './sessions.js';
 
 /**
@@ -61,6 +61,23 @@ export async function workspaceRoutes(app: FastifyInstance) {
     // ServiceError（业务错误）
     if (error instanceof ServiceError) {
       reply.code(error.statusCode);
+      return errorResponse(error.message, error.code);
+    }
+
+    // MergeConflictError → 409 with conflict details
+    if (error instanceof MergeConflictError) {
+      reply.code(409);
+      return {
+        error: error.message,
+        code: error.code,
+        conflictedFiles: error.conflictedFiles,
+        conflictOp: error.conflictOp,
+      };
+    }
+
+    // RebaseInProgressError → 409
+    if (error instanceof RebaseInProgressError) {
+      reply.code(409);
       return errorResponse(error.message, error.code);
     }
 
@@ -187,6 +204,35 @@ export async function workspaceRoutes(app: FastifyInstance) {
         stdio: 'ignore',
       }).unref();
 
+      return { success: true };
+    }
+  );
+
+  // ── Rebase 工作空间 ──────────────────────────────────────────────────────────
+
+  app.post<{ Params: { id: string } }>(
+    '/workspaces/:id/rebase',
+    async (request) => {
+      await workspaceService.rebase(request.params.id);
+      return { success: true };
+    }
+  );
+
+  // ── 获取工作空间 Git 操作状态 ──────────────────────────────────────────────
+
+  app.get<{ Params: { id: string } }>(
+    '/workspaces/:id/git-status',
+    async (request) => {
+      return workspaceService.getGitStatus(request.params.id);
+    }
+  );
+
+  // ── 中止当前 Git 操作 ──────────────────────────────────────────────────────
+
+  app.post<{ Params: { id: string } }>(
+    '/workspaces/:id/abort-operation',
+    async (request) => {
+      await workspaceService.abortOperation(request.params.id);
       return { success: true };
     }
   );

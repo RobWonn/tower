@@ -174,6 +174,7 @@ export function adaptTaskForDetail(
     title: task.title,
     status: mapTaskStatusToUI(task.status),
     branch,
+    mainBranch: project.mainBranch ?? 'main',
     description: task.description ?? '',
   }
 }

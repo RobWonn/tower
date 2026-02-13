@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import type { Workspace } from '@agent-tower/shared'
+import type { Workspace, GitOperationStatus } from '@agent-tower/shared'
 import { apiClient } from '../lib/api-client'
 import { queryKeys } from './query-keys'
 
@@ -95,5 +95,46 @@ export function useOpenInEditor() {
   return useMutation({
     mutationFn: ({ workspaceId, editorType }: { workspaceId: string; editorType?: string }) =>
       apiClient.post<{ success: boolean }>(`/workspaces/${workspaceId}/open-editor`, { editorType }),
+  })
+}
+
+// ============ Git Operations ============
+
+/** 获取 workspace 的 Git 操作状态 */
+export function useGitStatus(workspaceId: string) {
+  return useQuery({
+    queryKey: queryKeys.workspaces.gitStatus(workspaceId),
+    queryFn: () => apiClient.get<GitOperationStatus>(`/workspaces/${workspaceId}/git-status`),
+    enabled: !!workspaceId,
+  })
+}
+
+/** Rebase workspace 分支到最新基础分支 */
+export function useRebaseWorkspace() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (id: string) =>
+      apiClient.post<{ success: boolean }>(`/workspaces/${id}/rebase`),
+    onSuccess: (_data, id) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.workspaces.gitStatus(id) })
+    },
+    onError: (_error, id) => {
+      // 冲突时也刷新 git status 以更新 ConflictBanner
+      queryClient.invalidateQueries({ queryKey: queryKeys.workspaces.gitStatus(id) })
+    },
+  })
+}
+
+/** 中止当前 Git 操作 */
+export function useAbortOperation() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (id: string) =>
+      apiClient.post<{ success: boolean }>(`/workspaces/${id}/abort-operation`),
+    onSuccess: (_data, id) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.workspaces.gitStatus(id) })
+    },
   })
 }

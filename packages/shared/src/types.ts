@@ -104,6 +104,34 @@ export interface TodoItem {
   priority?: string | null
 }
 
+// ============ Git 操作类型 ============
+
+/** 冲突操作类型 */
+export enum ConflictOp {
+  REBASE = 'REBASE',
+  MERGE = 'MERGE',
+}
+
+/** Git 操作状态 */
+export interface GitOperationStatus {
+  /** 当前操作类型 */
+  operation: 'idle' | 'rebase' | 'merge'
+  /** 冲突文件列表 */
+  conflictedFiles: string[]
+  /** 冲突操作类型（仅在有冲突时有值） */
+  conflictOp: ConflictOp | null
+  /** 领先基础分支的提交数 */
+  ahead: number
+  /** 落后基础分支的提交数 */
+  behind: number
+  /** 是否有未提交的变更（tracked 文件） */
+  hasUncommittedChanges: boolean
+  /** 未提交变更的文件数 */
+  uncommittedCount: number
+  /** 未跟踪文件数 */
+  untrackedCount: number
+}
+
 // ============ 辅助类型 ============
 
 /** 代理可用性检查结果 */

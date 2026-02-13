@@ -1,5 +1,7 @@
 import path from 'path';
 import fs from 'fs/promises';
+import { ConflictOp } from '@agent-tower/shared';
+import type { GitOperationStatus } from '@agent-tower/shared';
 import {
   execGit,
   isValidBranchName,
@@ -10,6 +12,7 @@ import {
   WorktreeDirtyError,
   MergeConflictError,
   BranchesDivergedError,
+  RebaseInProgressError,
 } from './git-cli.js';
 
 // Re-export error types for consumers
@@ -21,6 +24,7 @@ export {
   WorktreeDirtyError,
   MergeConflictError,
   BranchesDivergedError,
+  RebaseInProgressError,
 } from './git-cli.js';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -208,6 +212,51 @@ export class WorktreeManager {
   }
 
   /**
+   * Ensure a worktree exists for an existing branch. If the worktree directory
+   * is already valid, return its path. Otherwise, recreate it.
+   *
+   * Used when reactivating a MERGED workspace — the branch was preserved via
+   * update-ref but the worktree directory was removed.
+   *
+   * 参考: vibe-kanban crates/services/src/services/worktree_manager.rs:93-123
+   */
+  async ensureWorktreeExists(branchName: string): Promise<string> {
+    await this.ensureBranchExists(branchName);
+
+    const worktreePath = path.join(this.worktreeBaseDir, branchName);
+
+    // Check if worktree already exists and is valid
+    const pathExists = await fs.access(worktreePath).then(() => true).catch(() => false);
+    if (pathExists) {
+      const gitFileExists = await fs.access(path.join(worktreePath, '.git')).then(() => true).catch(() => false);
+      if (gitFileExists) {
+        return worktreePath;
+      }
+      // Invalid directory — clean up first
+      await this.remove(worktreePath);
+    }
+
+    // Prune stale worktree references
+    await this.prune();
+
+    // Create worktree from existing branch (no -b flag)
+    await fs.mkdir(this.worktreeBaseDir, { recursive: true });
+    try {
+      await execGit(this.repoPath, ['worktree', 'add', worktreePath, branchName]);
+    } catch (err) {
+      if (err instanceof GitError) {
+        throw new GitError(
+          `Failed to recreate worktree for branch '${branchName}': ${err.message}`,
+          'WORKTREE_RECREATE_FAILED'
+        );
+      }
+      throw err;
+    }
+
+    return worktreePath;
+  }
+
+  /**
    * Get the diff of a worktree branch against a base branch.
    * Returns both the full diff and a stat summary.
    */
@@ -243,7 +292,7 @@ export class WorktreeManager {
     worktreePath: string,
     targetBranch: string,
     options?: { commitMessage?: string }
-  ): Promise<void> {
+  ): Promise<{ sha: string; taskBranch: string }> {
     // Determine the current branch of the worktree
     const currentBranchRaw = await execGit(worktreePath, ['rev-parse', '--abbrev-ref', 'HEAD']);
     const taskBranch = currentBranchRaw.trim();
@@ -280,7 +329,7 @@ export class WorktreeManager {
           await execGit(this.repoPath, ['merge', '--abort']).catch(() => {
             // merge --abort may fail if no merge in progress, ignore
           });
-          throw new MergeConflictError(conflictedFiles);
+          throw new MergeConflictError(conflictedFiles, ConflictOp.MERGE);
         }
       }
       throw err;
@@ -291,13 +340,18 @@ export class WorktreeManager {
       options?.commitMessage ?? `squash merge branch '${taskBranch}'`;
     await execGit(this.repoPath, ['commit', '-m', message]);
 
-    // 6. Clean up: remove worktree and delete task branch
+    // 6. Get the merge commit SHA
+    const sha = (await execGit(this.repoPath, ['rev-parse', 'HEAD'])).trim();
+
+    // 7. Update task branch ref to point to the merge commit.
+    //    This allows future work to continue from the merged state without conflicts.
+    //    参考: vibe-kanban crates/git/src/lib.rs:873-879
+    await execGit(this.repoPath, ['update-ref', `refs/heads/${taskBranch}`, sha]);
+
+    // 8. Remove worktree (but keep the branch for future reuse)
     await this.remove(worktreePath);
-    try {
-      await execGit(this.repoPath, ['branch', '-D', taskBranch]);
-    } catch {
-      // Branch may already be removed with the worktree — ignore
-    }
+
+    return { sha, taskBranch };
   }
 
   /**
@@ -305,6 +359,133 @@ export class WorktreeManager {
    */
   async prune(): Promise<void> {
     await execGit(this.repoPath, ['worktree', 'prune']);
+  }
+
+  // ── Rebase & Git Operation Status ──────────────────────────────────────────
+
+  /**
+   * Rebase the current branch in the worktree onto the latest base branch.
+   * Uses `git rebase --onto <baseBranch> <mergeBase> <taskBranch>`.
+   *
+   * - If a rebase is already in progress, throws RebaseInProgressError
+   * - On conflict, throws MergeConflictError with ConflictOp.REBASE (preserves rebase state)
+   * - On non-conflict failure, auto-aborts to keep repo clean
+   */
+  async rebase(worktreePath: string, baseBranch: string): Promise<void> {
+    // Pre-check 1: worktree must be clean (no uncommitted tracked changes)
+    if (!(await this.isWorktreeClean(worktreePath))) {
+      throw new WorktreeDirtyError(worktreePath);
+    }
+
+    // Pre-check 2: no rebase already in progress
+    if (await this.isRebaseInProgress(worktreePath)) {
+      throw new RebaseInProgressError();
+    }
+
+    // Get current branch name
+    const currentBranchRaw = await execGit(worktreePath, ['rev-parse', '--abbrev-ref', 'HEAD']);
+    const taskBranch = currentBranchRaw.trim();
+
+    // Calculate merge-base
+    const mergeBaseRaw = await execGit(worktreePath, ['merge-base', baseBranch, taskBranch]);
+    const mergeBase = mergeBaseRaw.trim();
+
+    try {
+      await execGit(worktreePath, ['rebase', '--onto', baseBranch, mergeBase, taskBranch]);
+    } catch (err) {
+      // Check if it's a conflict
+      if (await this.isRebaseInProgress(worktreePath)) {
+        const conflictedFiles = await this.getConflictedFilesIn(worktreePath);
+        if (conflictedFiles.length > 0) {
+          throw new MergeConflictError(conflictedFiles, ConflictOp.REBASE);
+        }
+      }
+
+      // Non-conflict failure: auto-abort to keep repo clean
+      try {
+        await execGit(worktreePath, ['rebase', '--abort']);
+      } catch {
+        // ignore abort failure
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Get the current Git operation status of a worktree.
+   */
+  async getGitOperationStatus(worktreePath: string, baseBranch: string): Promise<GitOperationStatus> {
+    const rebaseInProgress = await this.isRebaseInProgress(worktreePath);
+    const mergeInProgress = await this.isMergeInProgress(worktreePath);
+
+    let operation: GitOperationStatus['operation'] = 'idle';
+    let conflictOp: ConflictOp | null = null;
+
+    if (rebaseInProgress) {
+      operation = 'rebase';
+      conflictOp = ConflictOp.REBASE;
+    } else if (mergeInProgress) {
+      operation = 'merge';
+      conflictOp = ConflictOp.MERGE;
+    }
+
+    let conflictedFiles: string[] = [];
+    if (operation !== 'idle') {
+      conflictedFiles = await this.getConflictedFilesIn(worktreePath);
+    }
+
+    // Get branch divergence info
+    let ahead = 0;
+    let behind = 0;
+    try {
+      const currentBranchRaw = await execGit(worktreePath, ['rev-parse', '--abbrev-ref', 'HEAD']);
+      const currentBranch = currentBranchRaw.trim();
+      const status = await this.getBranchStatus(currentBranch, baseBranch);
+      ahead = status.ahead;
+      behind = status.behind;
+    } catch {
+      // If branch status fails (e.g. during rebase with detached HEAD), use defaults
+    }
+
+    // Get uncommitted changes info
+    let uncommittedCount = 0;
+    let untrackedCount = 0;
+    try {
+      const wtStatus = await this.getWorktreeStatus(worktreePath);
+      uncommittedCount = wtStatus.changedFiles;
+      untrackedCount = wtStatus.untrackedFiles;
+    } catch {
+      // ignore
+    }
+
+    return {
+      operation,
+      conflictedFiles,
+      conflictOp,
+      ahead,
+      behind,
+      hasUncommittedChanges: uncommittedCount > 0,
+      uncommittedCount,
+      untrackedCount,
+    };
+  }
+
+  /**
+   * Abort the current in-progress Git operation (rebase or merge).
+   * If no operation is in progress, this is a no-op.
+   */
+  async abortOperation(worktreePath: string): Promise<void> {
+    if (await this.isRebaseInProgress(worktreePath)) {
+      await execGit(worktreePath, ['rebase', '--abort']);
+      return;
+    }
+
+    if (await this.isMergeInProgress(worktreePath)) {
+      await execGit(worktreePath, ['merge', '--abort']);
+      return;
+    }
+
+    // No operation in progress — no-op
   }
 
   // ── Backward-compatible aliases ─────────────────────────────────────────────
@@ -380,14 +561,54 @@ export class WorktreeManager {
    * Get the list of conflicted files from a failed merge.
    */
   private async getConflictedFiles(): Promise<string[]> {
+    return this.getConflictedFilesIn(this.repoPath);
+  }
+
+  /**
+   * Get the list of conflicted files in a specific worktree path.
+   */
+  private async getConflictedFilesIn(worktreePath: string): Promise<string[]> {
     try {
-      const output = await execGit(this.repoPath, ['diff', '--name-only', '--diff-filter=U']);
+      const output = await execGit(worktreePath, ['diff', '--name-only', '--diff-filter=U']);
       return output
         .split('\n')
         .map((f) => f.trim())
         .filter((f) => f.length > 0);
     } catch {
       return [];
+    }
+  }
+
+  /**
+   * Check if a rebase is in progress in the given worktree.
+   * Detects by checking for rebase-merge or rebase-apply directories.
+   */
+  private async isRebaseInProgress(worktreePath: string): Promise<boolean> {
+    try {
+      const rebaseMergePath = (await execGit(worktreePath, ['rev-parse', '--git-path', 'rebase-merge'])).trim();
+      const rebaseApplyPath = (await execGit(worktreePath, ['rev-parse', '--git-path', 'rebase-apply'])).trim();
+
+      const [mergeExists, applyExists] = await Promise.all([
+        fs.access(rebaseMergePath).then(() => true).catch(() => false),
+        fs.access(rebaseApplyPath).then(() => true).catch(() => false),
+      ]);
+
+      return mergeExists || applyExists;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Check if a merge is in progress in the given worktree.
+   * Detects by verifying MERGE_HEAD exists.
+   */
+  private async isMergeInProgress(worktreePath: string): Promise<boolean> {
+    try {
+      await execGit(worktreePath, ['rev-parse', '--verify', 'MERGE_HEAD']);
+      return true;
+    } catch {
+      return false;
     }
   }
 }

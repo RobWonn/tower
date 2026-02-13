@@ -1,21 +1,25 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { SessionStatus, type Session } from '@agent-tower/shared'
+import type { ConflictOp } from '@agent-tower/shared'
 import { LogStream } from '@/components/agent'
 import type { LogStreamHandle } from '@/components/agent'
 import { TodoPanel } from '@/components/agent'
 import { TokenUsageIndicator } from '@/components/agent'
 import { IconRunning, IconReview, IconPending, IconDone } from '@/components/agent'
-import { Paperclip, ArrowUp, PanelRightClose, PanelRightOpen, Play, Square, Code2, Trash2, MoreVertical } from 'lucide-react'
+import { Paperclip, ArrowUp, PanelRightClose, PanelRightOpen, Play, Square, Code2, Trash2, MoreVertical, GitFork } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { WorkspacePanel } from '@/components/workspace/WorkspacePanel'
-import { useWorkspaces, useOpenInEditor } from '@/hooks/use-workspaces'
+import { useWorkspaces, useOpenInEditor, useGitStatus } from '@/hooks/use-workspaces'
 import { useNormalizedLogs } from '@/lib/socket/hooks/useNormalizedLogs'
 import { useSendMessage, useStopSession } from '@/hooks/use-sessions'
 import { useTodos } from '@/hooks/use-todos'
 import { useTokenUsage } from '@/hooks/useTokenUsage'
 import { StartAgentDialog } from './StartAgentDialog'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { ConflictBanner } from '@/components/workspace/ConflictBanner'
+import { ResolveConflictsDialog } from '@/components/workspace/ResolveConflictsDialog'
+import { GitOperationsDialog } from '@/components/workspace/GitOperationsDialog'
 import type { UITaskDetailData } from './types'
 import { UITaskStatus } from './types'
 
@@ -110,6 +114,8 @@ export function TaskDetail({ task, onDeleteTask, isDeleting }: TaskDetailProps) 
   const [input, setInput] = useState('')
   const [isStartDialogOpen, setIsStartDialogOpen] = useState(false)
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false)
+  const [isResolveDialogOpen, setIsResolveDialogOpen] = useState(false)
+  const [isGitDialogOpen, setIsGitDialogOpen] = useState(false)
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false)
   const moreMenuRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -191,6 +197,24 @@ export function TaskDetail({ task, onDeleteTask, isDeleting }: TaskDetailProps) 
     if (!workspaces) return undefined
     const active = workspaces.find(ws => ws.status === 'ACTIVE')
     return active?.id
+  }, [workspaces])
+
+  // ============ Git Status ============
+
+  const { data: gitStatus } = useGitStatus(activeWorkspaceId ?? '')
+
+  // Collect sessions from active workspace for ResolveConflictsDialog
+  const activeWorkspaceSessions = useMemo(() => {
+    if (!workspaces) return []
+    const active = workspaces.find(ws => ws.status === 'ACTIVE')
+    return active?.sessions ?? []
+  }, [workspaces])
+
+  // Active workspace branch name
+  const activeWorkspaceBranch = useMemo(() => {
+    if (!workspaces) return ''
+    const active = workspaces.find(ws => ws.status === 'ACTIVE')
+    return active?.branchName ?? ''
   }, [workspaces])
 
   // ============ Query Client & Mutations ============
@@ -496,6 +520,17 @@ export function TaskDetail({ task, onDeleteTask, isDeleting }: TaskDetailProps) 
         <div className="flex items-center gap-4">
           <StatusBadge status={task.status} />
 
+          {/* Git Operations */}
+          {activeWorkspaceId && (
+            <button
+              onClick={() => setIsGitDialogOpen(true)}
+              className="w-8 h-8 flex items-center justify-center rounded-md text-neutral-400 hover:text-neutral-900 hover:bg-neutral-100 transition-colors"
+              title="Git 操作"
+            >
+              <GitFork size={18} />
+            </button>
+          )}
+
           {/* Open in IDE */}
           <button
             onClick={handleOpenInIde}
@@ -543,6 +578,15 @@ export function TaskDetail({ task, onDeleteTask, isDeleting }: TaskDetailProps) 
           )}
         </div>
       </div>
+
+      {/* Conflict Banner */}
+      {activeWorkspaceId && gitStatus && (
+        <ConflictBanner
+          workspaceId={activeWorkspaceId}
+          gitStatus={gitStatus}
+          onResolve={() => setIsResolveDialogOpen(true)}
+        />
+      )}
 
       {/* Main Area — two-column layout */}
       <div className="flex-1 flex overflow-hidden">
@@ -693,6 +737,32 @@ export function TaskDetail({ task, onDeleteTask, isDeleting }: TaskDetailProps) 
         taskTitle={task.title}
         taskDescription={task.description}
       />
+
+      {/* Git Operations Dialog */}
+      {activeWorkspaceId && (
+        <GitOperationsDialog
+          open={isGitDialogOpen}
+          onOpenChange={setIsGitDialogOpen}
+          workspaceId={activeWorkspaceId}
+          branchName={activeWorkspaceBranch}
+          targetBranch={task.mainBranch}
+          onConflict={() => setIsResolveDialogOpen(true)}
+        />
+      )}
+
+      {/* Resolve Conflicts Dialog */}
+      {activeWorkspaceId && gitStatus && gitStatus.conflictOp && (
+        <ResolveConflictsDialog
+          open={isResolveDialogOpen}
+          onOpenChange={setIsResolveDialogOpen}
+          workspaceId={activeWorkspaceId}
+          conflictOp={gitStatus.conflictOp as ConflictOp}
+          conflictedFiles={gitStatus.conflictedFiles}
+          sourceBranch={activeWorkspaceBranch}
+          targetBranch={task.mainBranch}
+          sessions={activeWorkspaceSessions}
+        />
+      )}
 
       {/* Delete Confirm Dialog */}
       <ConfirmDialog
