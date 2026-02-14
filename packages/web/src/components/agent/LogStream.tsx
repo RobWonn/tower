@@ -85,7 +85,7 @@ const UserMessage = memo(({ content }: { content: string }) => (
 UserMessage.displayName = 'UserMessage'
 
 // 2. Thinking — 沉浸式折叠区块，视觉降权但内容可达
-const ThinkingBlock = memo(({ content, isOpenDefault = false }: { content: string; isOpenDefault?: boolean }) => {
+const ThinkingBlock = memo(({ content, isOpenDefault = true }: { content: string; isOpenDefault?: boolean }) => {
   const [isOpen, setIsOpen] = useState(isOpenDefault)
   const contentRef = useRef<HTMLDivElement>(null)
   const [contentHeight, setContentHeight] = useState(0)
@@ -119,7 +119,7 @@ const ThinkingBlock = memo(({ content, isOpenDefault = false }: { content: strin
       </button>
 
       <div
-        className="overflow-hidden transition-[max-height] duration-300 ease-in-out"
+        className="overflow-hidden"
         style={{ maxHeight: isOpen ? contentHeight + 16 : 0 }}
       >
         <div ref={contentRef} className="pl-5 pt-1 pb-2">

@@ -1,6 +1,11 @@
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { buildApp } from './app.js';
+import { getDevPort } from '@agent-tower/shared/dev-port';
 
-const PORT = parseInt(process.env.PORT || '3001', 10);
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const monorepoRoot = path.resolve(__dirname, '../../..');
+const PORT = getDevPort(monorepoRoot);
 
 async function main() {
   const app = await buildApp();

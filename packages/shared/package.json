@@ -21,6 +21,10 @@
     "./log-adapter": {
       "types": "./dist/log-adapter.d.ts",
       "import": "./dist/log-adapter.js"
+    },
+    "./dev-port": {
+      "types": "./dist/dev-port.d.ts",
+      "import": "./dist/dev-port.js"
     }
   },
   "scripts": {

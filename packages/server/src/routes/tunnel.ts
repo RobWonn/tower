@@ -14,7 +14,7 @@ export async function tunnelRoutes(app: FastifyInstance) {
       const port = request.body?.port
         ?? (typeof app.server.address() === 'object' && app.server.address()
           ? (app.server.address() as { port: number }).port
-          : 3001);
+          : 0);
       const result = await TunnelService.start(port);
       return result;
     } catch (err) {
