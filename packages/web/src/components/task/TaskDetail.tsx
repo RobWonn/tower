@@ -652,7 +652,7 @@ export function TaskDetail({ task, onDeleteTask, isDeleting }: TaskDetailProps) 
 
           {/* Todo Panel — fixed between logs and input */}
           {todos.length > 0 && (
-            <div className="px-6 pt-3 pb-1 bg-white flex-shrink-0 border-t border-neutral-100">
+            <div className="px-6 pt-2 pb-1 bg-white flex-shrink-0 border-t border-neutral-100">
               <TodoPanel todos={todos} />
             </div>
           )}

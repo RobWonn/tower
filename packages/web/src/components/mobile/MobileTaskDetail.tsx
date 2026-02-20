@@ -262,7 +262,7 @@ export function MobileTaskDetail({ task, onBack, onDeleteTask, isDeleting }: Mob
     sendingRef.current = true
     const message = input.trim()
     setInput('')
-    if (textareaRef.current) textareaRef.current.style.height = '48px'
+    if (textareaRef.current) textareaRef.current.style.height = '40px'
 
     sendMessageMutation.mutate(
       { id: sessionId, message },
@@ -283,7 +283,7 @@ export function MobileTaskDetail({ task, onBack, onDeleteTask, isDeleting }: Mob
     setInput(e.target.value)
     const el = e.target
     el.style.height = 'auto'
-    el.style.height = `${Math.max(48, Math.min(el.scrollHeight, 160))}px`
+    el.style.height = `${Math.max(40, Math.min(el.scrollHeight, 140))}px`
   }, [])
 
   const handleOpenInIde = useCallback(() => {
@@ -322,13 +322,13 @@ export function MobileTaskDetail({ task, onBack, onDeleteTask, isDeleting }: Mob
     <div ref={containerRef} className="fixed inset-x-0 top-0 flex flex-col h-dvh bg-white overflow-hidden">
       {/* Header */}
       <header className="shrink-0 bg-white border-b border-neutral-200 z-20">
-        <div className="flex items-center h-12 px-3 gap-2">
-          <button onClick={onBack} className="p-2 -ml-1 text-neutral-600 active:text-neutral-900">
-            <ArrowLeft size={20} />
+        <div className="flex items-center h-11 px-2.5 gap-1.5">
+          <button onClick={onBack} className="p-1.5 -ml-0.5 text-neutral-600 active:text-neutral-900">
+            <ArrowLeft size={18} />
           </button>
           <div className="flex-1 min-w-0">
-            <h1 className="text-sm font-bold text-neutral-900 truncate">{task.title}</h1>
-            <div className="flex items-center gap-1.5 text-xs text-neutral-500">
+            <h1 className="text-[13px] font-bold text-neutral-900 truncate leading-tight">{task.title}</h1>
+            <div className="flex items-center gap-1 text-[11px] text-neutral-500 leading-tight">
               <span className={`font-medium ${task.projectColor}`}>{task.projectName}</span>
               <span className="text-neutral-300">/</span>
               <span className="font-mono truncate">{task.branch}</span>
@@ -338,18 +338,18 @@ export function MobileTaskDetail({ task, onBack, onDeleteTask, isDeleting }: Mob
           <button
             onClick={handleOpenInIde}
             disabled={!activeWorkspaceId}
-            className="p-2 text-neutral-400 active:text-neutral-900 disabled:opacity-30"
+            className="p-1.5 text-neutral-400 active:text-neutral-900 disabled:opacity-30"
           >
-            <Code2 size={18} />
+            <Code2 size={16} />
           </button>
           {onDeleteTask && (
             <div className="relative" ref={moreMenuRef}>
               <button
                 onClick={() => setIsMoreMenuOpen(v => !v)}
-                className="p-2 text-neutral-400 active:text-neutral-900"
+                className="p-1.5 text-neutral-400 active:text-neutral-900"
                 aria-label="More actions"
               >
-                <MoreVertical size={18} />
+                <MoreVertical size={16} />
               </button>
               {isMoreMenuOpen && (
                 <div className="absolute right-0 top-full mt-1 w-40 bg-white rounded-lg border border-neutral-200 shadow-lg z-50 py-1">
@@ -375,13 +375,13 @@ export function MobileTaskDetail({ task, onBack, onDeleteTask, isDeleting }: Mob
             <button
               key={key}
               onClick={() => setActiveTab(key)}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-medium transition-colors ${
+              className={`flex-1 flex items-center justify-center gap-1 py-2 text-[11px] font-medium transition-colors ${
                 activeTab === key
                   ? 'text-neutral-900 border-b-2 border-neutral-900'
                   : 'text-neutral-400 border-b-2 border-transparent'
               }`}
             >
-              <Icon size={14} />
+              <Icon size={13} />
               <span>{label}</span>
             </button>
           ))}
@@ -392,10 +392,10 @@ export function MobileTaskDetail({ task, onBack, onDeleteTask, isDeleting }: Mob
       {activeTab === 'chat' && (
         <div className="flex-1 flex flex-col min-h-0">
           {/* Scrollable Logs */}
-          <div ref={scrollContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 pt-4 pb-2">
+          <div ref={scrollContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-3 pt-3 pb-2">
             {/* Task Description */}
-            <div className="mb-4 pb-3 border-b border-neutral-100">
-              <p className="text-sm text-neutral-500 leading-relaxed">{task.description}</p>
+            <div className="mb-3 pb-2 border-b border-neutral-100">
+              <p className="text-[13px] text-neutral-500 leading-relaxed">{task.description}</p>
             </div>
 
             {isLoadingWorkspaces ? (
@@ -408,16 +408,16 @@ export function MobileTaskDetail({ task, onBack, onDeleteTask, isDeleting }: Mob
                   {isSessionActive ? 'Waiting for agent output...' : 'No logs recorded.'}
                 </div>
               ) : (
-                <LogStream ref={logStreamRef} logs={logs} scrollElementRef={scrollContainerRef} />
+                <LogStream ref={logStreamRef} logs={logs} scrollElementRef={scrollContainerRef} compact />
               )
             ) : (
               /* No session — show start agent CTA */
-              <div className="flex flex-col items-center justify-center py-16 text-center">
-                <div className="w-14 h-14 bg-neutral-50 rounded-2xl border border-neutral-100 flex items-center justify-center mb-5">
-                  <Play size={24} className="text-neutral-400 ml-0.5" />
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <div className="w-12 h-12 bg-neutral-50 rounded-xl border border-neutral-100 flex items-center justify-center mb-4">
+                  <Play size={20} className="text-neutral-400 ml-0.5" />
                 </div>
-                <h3 className="text-base font-medium text-neutral-900 mb-1.5">尚未启动 Agent</h3>
-                <p className="text-sm text-neutral-500 mb-6 max-w-xs">
+                <h3 className="text-sm font-medium text-neutral-900 mb-1">尚未启动 Agent</h3>
+                <p className="text-xs text-neutral-500 mb-5 max-w-[240px]">
                   选择一个 Agent 来执行此任务
                 </p>
                 <Button onClick={() => setIsStartDialogOpen(true)}>
@@ -430,14 +430,14 @@ export function MobileTaskDetail({ task, onBack, onDeleteTask, isDeleting }: Mob
 
           {/* Todo Panel */}
           {todos.length > 0 && (
-            <div className="px-4 pt-2 pb-1 bg-white shrink-0 border-t border-neutral-100">
+            <div className="px-3 pt-1.5 pb-0.5 bg-white shrink-0 border-t border-neutral-100">
               <TodoPanel todos={todos} compact />
             </div>
           )}
 
           {/* Input Area */}
           {sessionId && (
-            <div className="p-3 bg-white shrink-0 border-t border-neutral-100">
+            <div className="px-3 py-2 bg-white shrink-0 border-t border-neutral-100">
               <div className="relative bg-white rounded-xl border border-neutral-200 shadow-sm focus-within:border-neutral-300">
                 <textarea
                   ref={textareaRef}
@@ -451,13 +451,13 @@ export function MobileTaskDetail({ task, onBack, onDeleteTask, isDeleting }: Mob
                   }}
                   rows={1}
                   placeholder={!isSessionActive ? 'Continue conversation...' : 'Message Agent...'}
-                  className="w-full px-3 pt-3 pb-1 bg-transparent border-none focus:outline-none resize-none text-base text-neutral-900 placeholder-neutral-400"
-                  style={{ minHeight: 48, maxHeight: 160 }}
+                  className="w-full px-3 pt-2.5 pb-1 bg-transparent border-none focus:outline-none resize-none text-[15px] text-neutral-900 placeholder-neutral-400"
+                  style={{ minHeight: 40, maxHeight: 140 }}
                 />
-                <div className="flex items-center justify-between px-2 pb-2">
-                  <div className="flex items-center gap-1">
-                    <button className="p-1.5 text-neutral-400 active:text-neutral-600 rounded-lg">
-                      <Paperclip size={16} />
+                <div className="flex items-center justify-between px-2 pb-1.5">
+                  <div className="flex items-center gap-0.5">
+                    <button className="p-1 text-neutral-400 active:text-neutral-600 rounded-lg">
+                      <Paperclip size={15} />
                     </button>
                     <TokenUsageIndicator usage={tokenUsage} />
                   </div>
@@ -467,7 +467,7 @@ export function MobileTaskDetail({ task, onBack, onDeleteTask, isDeleting }: Mob
                       disabled={stopSession.isPending}
                       className="p-1.5 rounded-lg bg-red-500 text-white active:bg-red-600 disabled:opacity-50"
                     >
-                      <Square size={14} />
+                      <Square size={12} />
                     </button>
                   ) : (
                     <button
@@ -479,7 +479,7 @@ export function MobileTaskDetail({ task, onBack, onDeleteTask, isDeleting }: Mob
                           : 'bg-transparent text-neutral-300'
                       }`}
                     >
-                      <ArrowUp size={16} />
+                      <ArrowUp size={15} />
                     </button>
                   )}
                 </div>

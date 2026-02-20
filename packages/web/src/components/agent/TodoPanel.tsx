@@ -4,12 +4,13 @@ import type { TodoItem } from '@/hooks/use-todos'
 
 const TODO_PANEL_OPEN_KEY = 'agent-tower-todo-panel-open'
 
-function getStatusIcon(status?: string) {
+function getStatusIcon(status?: string, compact?: boolean) {
+  const size = compact ? 'h-3 w-3' : 'h-3.5 w-3.5'
   const s = (status || '').toLowerCase()
-  if (s === 'completed') return <Check aria-hidden className="h-4 w-4 text-emerald-500" />
-  if (s === 'in_progress' || s === 'in-progress') return <CircleDot aria-hidden className="h-4 w-4 text-blue-500" />
-  if (s === 'cancelled') return <Circle aria-hidden className="h-4 w-4 text-neutral-300" />
-  return <Circle aria-hidden className="h-4 w-4 text-neutral-400" />
+  if (s === 'completed') return <Check aria-hidden className={`${size} text-emerald-500`} />
+  if (s === 'in_progress' || s === 'in-progress') return <CircleDot aria-hidden className={`${size} text-blue-500`} />
+  if (s === 'cancelled') return <Circle aria-hidden className={`${size} text-neutral-300`} />
+  return <Circle aria-hidden className={`${size} text-neutral-400`} />
 }
 
 interface TodoPanelProps {
@@ -32,6 +33,7 @@ export function TodoPanel({ todos, compact }: TodoPanelProps) {
   if (!todos || todos.length === 0) return null
 
   const completedCount = todos.filter(t => t.status?.toLowerCase() === 'completed').length
+  const progressPct = todos.length > 0 ? (completedCount / todos.length) * 100 : 0
 
   return (
     <details
@@ -41,35 +43,47 @@ export function TodoPanel({ todos, compact }: TodoPanelProps) {
     >
       {/* [style] hide iOS Safari default disclosure triangle */}
       <summary className="list-none cursor-pointer select-none [&::-webkit-details-marker]:hidden">
-        <div className="bg-neutral-50 border border-neutral-100 rounded-xl px-4 py-3 text-sm flex items-center justify-between hover:bg-neutral-100 transition-colors">
-          <span className="text-neutral-600 font-medium">
-            待办事项 ({completedCount}/{todos.length})
-          </span>
+        <div className={`bg-neutral-50/80 border border-neutral-100 rounded-lg flex items-center justify-between hover:bg-neutral-100/80 transition-colors ${compact ? 'px-3 py-1.5' : 'px-3 py-2'}`}>
+          <div className="flex items-center gap-2 min-w-0">
+            <span className={`text-neutral-500 font-medium ${compact ? 'text-xs' : 'text-xs'}`}>
+              待办
+            </span>
+            <span className={`text-neutral-400 tabular-nums ${compact ? 'text-xs' : 'text-xs'}`}>
+              {completedCount}/{todos.length}
+            </span>
+            {/* Mini progress bar */}
+            <div className="w-12 h-1 bg-neutral-200/60 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-emerald-400 rounded-full transition-all duration-300"
+                style={{ width: `${progressPct}%` }}
+              />
+            </div>
+          </div>
           <ChevronDown
             aria-hidden
-            className="h-4 w-4 text-neutral-400 transition-transform group-open:rotate-180"
+            className={`text-neutral-400 transition-transform group-open:rotate-180 ${compact ? 'h-3 w-3' : 'h-3.5 w-3.5'}`}
           />
         </div>
       </summary>
-      <div className={`px-3 pt-2 pb-1 ${compact ? 'max-h-32 overflow-y-auto' : ''}`}>
-        <ul className={compact ? 'space-y-0.5' : 'space-y-1.5'} role="list" aria-label="Agent todo list">
-          {todos.map((todo, index) => (
-            <li
-              key={`${todo.content}-${index}`}
-              className={`flex items-start gap-2 ${compact ? 'py-0.5' : 'py-1'}`}
-            >
-              <span className="mt-0.5 h-4 w-4 flex items-center justify-center shrink-0">
-                {getStatusIcon(todo.status)}
-              </span>
-              <span className={`${compact ? 'text-xs leading-4' : 'text-sm leading-5'} text-neutral-700 wrap-break-word`}>
-                {todo.status?.toLowerCase() === 'cancelled' ? (
-                  <s className="text-neutral-400">{todo.content}</s>
-                ) : (
-                  todo.content
-                )}
-              </span>
-            </li>
-          ))}
+      <div className={`pt-1.5 pb-0.5 ${compact ? 'max-h-28 overflow-y-auto px-1' : 'px-1'}`}>
+        <ul className="space-y-px" role="list" aria-label="Agent todo list">
+          {todos.map((todo, index) => {
+            const isCancelled = todo.status?.toLowerCase() === 'cancelled'
+            const isCompleted = todo.status?.toLowerCase() === 'completed'
+            return (
+              <li
+                key={`${todo.content}-${index}`}
+                className={`flex items-center gap-1.5 rounded-md px-2 ${compact ? 'py-0.5' : 'py-[3px]'} ${isCompleted ? 'opacity-60' : ''}`}
+              >
+                <span className={`flex items-center justify-center shrink-0 ${compact ? 'h-3 w-3' : 'h-3.5 w-3.5'}`}>
+                  {getStatusIcon(todo.status, compact)}
+                </span>
+                <span className={`${compact ? 'text-[11px] leading-[14px]' : 'text-xs leading-4'} text-neutral-600 wrap-break-word truncate ${isCancelled ? 'line-through text-neutral-400' : ''} ${isCompleted ? 'text-neutral-400' : ''}`}>
+                  {todo.content}
+                </span>
+              </li>
+            )
+          })}
         </ul>
       </div>
     </details>

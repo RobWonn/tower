@@ -11,6 +11,8 @@ interface LogStreamProps {
   scrollElementRef: React.RefObject<HTMLDivElement | null>
   /** scrollMargin: 滚动容器顶部到 LogStream 之间的偏移量（如 task description 高度） */
   scrollMargin?: number
+  /** 紧凑模式 — 减少消息间距和 padding，适用于手机端 */
+  compact?: boolean
 }
 
 export interface LogStreamHandle {
@@ -75,9 +77,11 @@ function groupConsecutiveTools(logs: LogEntry[]): RenderItem[] {
 // ============ Components ============
 
 // 1. User Message — 右对齐聊天气泡
-const UserMessage = memo(({ content }: { content: string }) => (
-  <div className="flex justify-end mb-8 mt-4">
-    <div className="relative bg-neutral-200 text-neutral-900 px-5 py-3.5 rounded-2xl rounded-tr-sm max-w-[85%] text-sm leading-relaxed whitespace-pre-wrap">
+const UserMessage = memo(({ content, compact }: { content: string; compact?: boolean }) => (
+  <div className={compact ? 'flex justify-end mb-4 mt-2' : 'flex justify-end mb-8 mt-4'}>
+    <div className={`relative bg-neutral-200 text-neutral-900 rounded-2xl rounded-tr-sm max-w-[85%] leading-relaxed whitespace-pre-wrap ${
+      compact ? 'px-3.5 py-2.5 text-[13px]' : 'px-5 py-3.5 text-sm'
+    }`}>
       {content}
     </div>
   </div>
@@ -296,16 +300,16 @@ const ToolGroupItem = memo(({ log, firstLine }: { log: LogEntry; firstLine: stri
 ToolGroupItem.displayName = 'ToolGroupItem'
 
 // 4. Agent 主文本 — 纯文本无图标
-const AgentText = memo(({ content }: { content: string }) => (
-  <div className="text-sm text-neutral-800 leading-7 mb-2 whitespace-pre-wrap">
+const AgentText = memo(({ content, compact }: { content: string; compact?: boolean }) => (
+  <div className={`text-neutral-800 whitespace-pre-wrap ${compact ? 'text-[13px] leading-6 mb-1' : 'text-sm leading-7 mb-2'}`}>
     {content}
   </div>
 ))
 AgentText.displayName = 'AgentText'
 
 // 5. Assistant Message — Streamdown 渲染 markdown
-const AssistantMessage = memo(({ content }: { content: string }) => (
-  <div className="text-sm text-neutral-800 leading-7 mb-2">
+const AssistantMessage = memo(({ content, compact }: { content: string; compact?: boolean }) => (
+  <div className={`text-neutral-800 ${compact ? 'text-[13px] leading-6 mb-1' : 'text-sm leading-7 mb-2'}`}>
     <Streamdown>{content}</Streamdown>
   </div>
 ))
@@ -313,7 +317,7 @@ AssistantMessage.displayName = 'AssistantMessage'
 
 // ============ RenderItem renderer ============
 
-function renderItem(item: RenderItem): React.ReactNode {
+function renderItem(item: RenderItem, compact?: boolean): React.ReactNode {
   if (item.kind === 'group') {
     return <ToolGroup label={item.label} logs={item.logs} />
   }
@@ -330,7 +334,7 @@ function renderItem(item: RenderItem): React.ReactNode {
 
   switch (log.type) {
     case LogType.User:
-      return <UserMessage content={log.content} />
+      return <UserMessage content={log.content} compact={compact} />
 
     case LogType.Tool:
       return <ToolBlock type={log.type} title={log.title || 'Tool'} content={log.content} />
@@ -339,12 +343,12 @@ function renderItem(item: RenderItem): React.ReactNode {
       return <ToolBlock type={log.type} title="Action" content={log.content} />
 
     case LogType.Assistant:
-      return <AssistantMessage content={log.content} />
+      return <AssistantMessage content={log.content} compact={compact} />
 
     case LogType.Info:
             // 跳过 token_usage_info 条目的文本渲染（已由 TokenUsageIndicator 聚合展示）
             if (log.tokenUsage) return null
-      return <AgentText content={log.content} />
+      return <AgentText content={log.content} compact={compact} />
 
     case LogType.Cursor:
       return (
@@ -359,7 +363,7 @@ function renderItem(item: RenderItem): React.ReactNode {
 // ============ Main Component ============
 
 export const LogStream = forwardRef<LogStreamHandle, LogStreamProps>(
-  function LogStream({ logs, scrollElementRef, scrollMargin = 0 }, ref) {
+  function LogStream({ logs, scrollElementRef, scrollMargin = 0, compact }, ref) {
     const items = useMemo(() => groupConsecutiveTools(logs), [logs])
 
     const virtualizer = useVirtualizer({
@@ -410,7 +414,7 @@ export const LogStream = forwardRef<LogStreamHandle, LogStreamProps>(
                 top: virtualRow.start - virtualizer.options.scrollMargin,
               }}
             >
-              {renderItem(item)}
+              {renderItem(item, compact)}
             </div>
           )
         })}
