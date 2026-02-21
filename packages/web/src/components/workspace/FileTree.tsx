@@ -9,6 +9,7 @@ import {
   Folder,
   FolderOpen,
   Image,
+  PanelLeftClose,
   RefreshCw,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -19,6 +20,7 @@ export interface FileTreeProps {
   className?: string
   selectedFilePath?: string | null
   onFileSelect: (filePath: string) => void
+  onCollapse?: () => void
 }
 
 type DirPath = string // always starts with "/" (root is "/")
@@ -172,6 +174,7 @@ export const FileTree: React.FC<FileTreeProps> = ({
   className,
   onFileSelect,
   selectedFilePath,
+  onCollapse,
 }) => {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
   const refreshFileTree = useRefreshFileTree(workingDir)
@@ -194,16 +197,28 @@ export const FileTree: React.FC<FileTreeProps> = ({
           </div>
           <div className="text-[11px] text-neutral-400 truncate">{workingDir || 'No workingDir'}</div>
         </div>
-        {workingDir && (
-          <button
-            type="button"
-            onClick={refreshFileTree}
-            className="p-1 rounded hover:bg-neutral-200 text-neutral-400 hover:text-neutral-700 transition-colors shrink-0"
-            title="Refresh file tree"
-          >
-            <RefreshCw size={13} />
-          </button>
-        )}
+        <div className="flex items-center gap-0.5 shrink-0">
+          {workingDir && (
+            <button
+              type="button"
+              onClick={refreshFileTree}
+              className="p-1 rounded hover:bg-neutral-200 text-neutral-400 hover:text-neutral-700 transition-colors"
+              title="Refresh file tree"
+            >
+              <RefreshCw size={13} />
+            </button>
+          )}
+          {onCollapse && (
+            <button
+              type="button"
+              onClick={onCollapse}
+              className="p-1 rounded hover:bg-neutral-200 text-neutral-400 hover:text-neutral-700 transition-colors"
+              title="Collapse file tree"
+            >
+              <PanelLeftClose size={13} />
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex-1 overflow-auto p-2">
