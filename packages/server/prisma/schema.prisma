@@ -99,3 +99,16 @@ model ExecutionLog {
 
   @@index([processId])
 }
+
+// 附件
+model Attachment {
+  id           String   @id @default(uuid())
+  originalName String
+  mimeType     String
+  sizeBytes    Int
+  storagePath  String
+  hash         String
+  createdAt    DateTime @default(now())
+
+  @@index([hash])
+}

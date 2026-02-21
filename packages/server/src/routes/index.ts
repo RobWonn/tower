@@ -11,6 +11,7 @@ import { gitRoutes } from './git.js';
 import { profileRoutes } from './profiles.js';
 import { terminalRoutes } from './terminals.js';
 import { tunnelRoutes } from './tunnel.js';
+import { attachmentRoutes } from './attachments.js';
 
 export async function registerRoutes(app: FastifyInstance) {
   // 系统路由
@@ -48,4 +49,7 @@ export async function registerRoutes(app: FastifyInstance) {
 
   // Tunnel 路由
   await app.register(tunnelRoutes, { prefix: '/api' });
+
+  // 附件路由
+  await app.register(attachmentRoutes, { prefix: '/api/attachments' });
 }

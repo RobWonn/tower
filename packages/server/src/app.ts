@@ -1,5 +1,6 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
+import multipart from '@fastify/multipart';
 import fastifyStatic from '@fastify/static';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -21,6 +22,10 @@ export async function buildApp() {
   // 注册插件
   await app.register(cors, {
     origin: true,
+  });
+
+  await app.register(multipart, {
+    limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
   });
 
   // 隧道 token 认证钩子（仅拦截经 Cloudflare 隧道的请求）

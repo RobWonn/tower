@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback, useImperativeHandle, forwardRef, memo, 
 import { type LogEntry, LogType } from '@agent-tower/shared/log-adapter'
 import { ChevronRight, ChevronDown } from 'lucide-react'
 import { Streamdown } from 'streamdown'
+import type { UrlTransform } from 'streamdown'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import 'streamdown/styles.css'
 
@@ -74,15 +75,44 @@ function groupConsecutiveTools(logs: LogEntry[]): RenderItem[] {
   return items
 }
 
+// ============ URL Transform ============
+
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api'
+
+/**
+ * 将磁盘绝对路径转换为 HTTP URL，使浏览器能显示附件图片。
+ * 匹配 data/attachments/ 路径模式，转为 /api/attachments/by-path?path=... 请求。
+ */
+const attachmentUrlTransform: UrlTransform = (url) => {
+  if (url.includes('data/attachments/') || url.includes('data\\attachments\\')) {
+    return `${API_BASE_URL}/attachments/by-path?path=${encodeURIComponent(url)}`
+  }
+  return url
+}
+
+/** 自定义 img 渲染：限制图片尺寸，点击可查看原图 */
+const MarkdownImage = ({ src, alt, ...props }: React.ImgHTMLAttributes<HTMLImageElement>) => (
+  <a href={src} target="_blank" rel="noopener noreferrer" className="inline-block">
+    <img
+      src={src}
+      alt={alt}
+      {...props}
+      className="max-w-[300px] max-h-[200px] object-contain rounded-lg border border-neutral-200 cursor-pointer hover:opacity-90 transition-opacity"
+    />
+  </a>
+)
+
+const streamdownComponents = { img: MarkdownImage }
+
 // ============ Components ============
 
 // 1. User Message — 右对齐聊天气泡
 const UserMessage = memo(({ content, compact }: { content: string; compact?: boolean }) => (
   <div className={compact ? 'flex justify-end mb-4 mt-2' : 'flex justify-end mb-8 mt-4'}>
-    <div className={`relative bg-neutral-200 text-neutral-900 rounded-2xl rounded-tr-sm max-w-[85%] leading-relaxed whitespace-pre-wrap ${
+    <div className={`relative bg-neutral-200 text-neutral-900 rounded-2xl rounded-tr-sm max-w-[85%] leading-relaxed ${
       compact ? 'px-3.5 py-2.5 text-[13px]' : 'px-5 py-3.5 text-sm'
     }`}>
-      {content}
+      <Streamdown urlTransform={attachmentUrlTransform} components={streamdownComponents}>{content}</Streamdown>
     </div>
   </div>
 ))

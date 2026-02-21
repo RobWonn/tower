@@ -15,6 +15,8 @@ import { useNormalizedLogs } from '@/lib/socket/hooks/useNormalizedLogs'
 import { useSendMessage, useStopSession } from '@/hooks/use-sessions'
 import { useTodos } from '@/hooks/use-todos'
 import { useTokenUsage } from '@/hooks/useTokenUsage'
+import { useAttachments } from '@/hooks/use-attachments'
+import { AttachmentPreview } from '@/components/ui/AttachmentPreview'
 import { StartAgentDialog } from './StartAgentDialog'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { ConflictBanner } from '@/components/workspace/ConflictBanner'
@@ -119,6 +121,7 @@ export function TaskDetail({ task, onDeleteTask, isDeleting }: TaskDetailProps) 
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false)
   const moreMenuRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const logStreamRef = useRef<LogStreamHandle>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   /**
@@ -273,6 +276,9 @@ export function TaskDetail({ task, onDeleteTask, isDeleting }: TaskDetailProps) 
   // Extract agent todos from the log stream
   const { todos } = useTodos(entries)
 
+  // Attachments (file upload, paste, drag-drop)
+  const { files: attachmentFiles, addFiles, removeFile, clear: clearAttachments, buildMarkdownLinks, hasFiles: hasAttachments, isUploading } = useAttachments()
+
   // Token usage — 取最新一条，回退到持久化值
   const initialTokenUsage = useMemo(() => {
     if (!activeSession?.tokenUsage) return undefined
@@ -393,10 +399,15 @@ export function TaskDetail({ task, onDeleteTask, isDeleting }: TaskDetailProps) 
 
   const sendingRef = useRef(false)
   const handleSend = useCallback(async () => {
-    if (!input.trim() || !sessionId || sendingRef.current) return
+    if ((!input.trim() && !hasAttachments) || !sessionId || sendingRef.current || isUploading) return
     sendingRef.current = true
-    const message = input.trim()
+
+    // 拼接附件 markdown 链接到消息末尾
+    const attachmentLinks = buildMarkdownLinks()
+    const message = [input.trim(), attachmentLinks].filter(Boolean).join('\n\n')
+
     setInput('')
+    clearAttachments()
     if (textareaRef.current) {
       textareaRef.current.style.height = '60px'
     }
@@ -416,13 +427,60 @@ export function TaskDetail({ task, onDeleteTask, isDeleting }: TaskDetailProps) 
         },
       }
     )
-  }, [input, sessionId, sendMessageMutation, attach])
+  }, [input, sessionId, sendMessageMutation, attach, hasAttachments, isUploading, buildMarkdownLinks, clearAttachments])
 
   const handleStop = useCallback(async () => {
     if (!sessionId) return
     await stopSession.mutateAsync(sessionId)
     queryClient.invalidateQueries({ queryKey: ['workspaces'] })
   }, [sessionId, stopSession, queryClient])
+
+  // ============ File Upload Handlers ============
+
+  const handleFileInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const fileList = e.target.files
+    if (fileList && fileList.length > 0) {
+      addFiles(Array.from(fileList))
+    }
+    // 重置 input 以便再次选择同一文件
+    e.target.value = ''
+  }, [addFiles])
+
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    const items = e.clipboardData.items
+    const files: File[] = []
+    for (const item of items) {
+      if (item.kind === 'file') {
+        const file = item.getAsFile()
+        if (file) files.push(file)
+      }
+    }
+    if (files.length > 0) {
+      e.preventDefault()
+      addFiles(files)
+    }
+  }, [addFiles])
+
+  const [isDragOver, setIsDragOver] = useState(false)
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragOver(true)
+  }, [])
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragOver(false)
+  }, [])
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragOver(false)
+    const fileList = e.dataTransfer.files
+    if (fileList.length > 0) {
+      addFiles(Array.from(fileList))
+    }
+  }, [addFiles])
 
   // Resize event handlers (useCallback)
   const handleMouseMove = useCallback((e: MouseEvent) => {
@@ -665,12 +723,23 @@ export function TaskDetail({ task, onDeleteTask, isDeleting }: TaskDetailProps) 
           )}
 
           {/* Input Area */}
-          <div className="p-6 pt-2 bg-white flex-shrink-0 w-full z-10 pb-6 border-t border-transparent">
-            <div className="relative bg-white rounded-xl border border-neutral-200 shadow-sm hover:shadow-md focus-within:shadow-md focus-within:border-neutral-300 transition-all duration-200">
+          <div
+            className="p-6 pt-2 bg-white flex-shrink-0 w-full z-10 pb-6 border-t border-transparent"
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
+            <div className={`relative bg-white rounded-xl border shadow-sm hover:shadow-md focus-within:shadow-md focus-within:border-neutral-300 transition-all duration-200 ${
+              isDragOver ? 'border-blue-400 bg-blue-50/50 shadow-md' : 'border-neutral-200'
+            }`}>
+              {/* Attachment Preview */}
+              <AttachmentPreview files={attachmentFiles} onRemove={removeFile} />
+
               <textarea
                 ref={textareaRef}
                 value={input}
                 onChange={handleInput}
+                onPaste={handlePaste}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey && !e.repeat && !e.nativeEvent.isComposing) {
                     e.preventDefault()
@@ -678,22 +747,35 @@ export function TaskDetail({ task, onDeleteTask, isDeleting }: TaskDetailProps) 
                   }
                 }}
                 rows={1}
-                placeholder={sessionId && !isSessionActive ? 'Continue conversation...' : 'Message Agent...'}
+                placeholder={isDragOver ? 'Drop files here...' : sessionId && !isSessionActive ? 'Continue conversation...' : 'Message Agent...'}
                 className="w-full px-4 pt-4 pb-2 bg-transparent border-none focus:outline-none resize-none text-sm text-neutral-900 placeholder-neutral-400 leading-relaxed"
                 style={{ minHeight: '60px', maxHeight: '300px' }}
+              />
+
+              {/* Hidden file input */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                className="hidden"
+                onChange={handleFileInputChange}
               />
 
               {/* Toolbar Row */}
               <div className="flex items-center justify-between px-2 pb-2 pt-1">
                 <div className="flex items-center gap-1">
-                  <button className="p-2 text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 rounded-lg transition-colors">
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="p-2 text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 rounded-lg transition-colors"
+                    title="Upload file"
+                  >
                     <Paperclip size={18} />
                   </button>
                   <TokenUsageIndicator usage={tokenUsage} />
                 </div>
 
                 <div className="flex items-center gap-2">
-                  {isSessionActive && !input.trim() ? (
+                  {isSessionActive && !input.trim() && !hasAttachments ? (
                     <button
                       onClick={handleStop}
                       disabled={stopSession.isPending}
@@ -704,9 +786,9 @@ export function TaskDetail({ task, onDeleteTask, isDeleting }: TaskDetailProps) 
                   ) : (
                     <button
                       onClick={handleSend}
-                      disabled={!input.trim()}
+                      disabled={(!input.trim() && !hasAttachments) || isUploading}
                       className={`p-2 rounded-lg transition-all duration-200 ${
-                        input.trim()
+                        (input.trim() || hasAttachments) && !isUploading
                           ? 'bg-neutral-900 text-white shadow-md hover:bg-black'
                           : 'bg-transparent text-neutral-300 cursor-not-allowed'
                       }`}

@@ -159,3 +159,18 @@ export interface ExecutorConfig {
   prompt: string
   env?: Record<string, string>
 }
+
+// ============ 附件类型 ============
+
+/** 附件 */
+export interface Attachment {
+  id: string
+  originalName: string
+  mimeType: string
+  sizeBytes: number
+  /** HTTP 访问路径: /attachments/:id/file */
+  url: string
+  /** 磁盘绝对路径，用于传给 agent */
+  storagePath: string
+  createdAt?: string
+}
