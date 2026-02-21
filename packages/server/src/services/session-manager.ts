@@ -516,9 +516,6 @@ export class SessionManager {
         });
 
         console.log(`[SessionManager] Task ${task.id} auto-advanced to IN_REVIEW (all sessions completed)`);
-
-        // 触发 commit message 后台生成
-        this.triggerCommitMessageGeneration(session.workspaceId);
       }
     } catch (error) {
       console.error(`[SessionManager] checkTaskAutoAdvance failed for session ${sessionId}:`, error);
@@ -602,10 +599,19 @@ export class SessionManager {
         );
       }
     } else {
-      // 正常 CHAT session: autoCommit → 持久化 → 检查 Task 推进
+      // 正常 CHAT session: autoCommit → 持久化 → 检查 Task 推进 → 触发 commit message 生成
       await this.autoCommitChanges(sessionId);
       await this.flushSnapshotPersist(sessionId, SessionStatus.COMPLETED);
       await this.checkTaskAutoAdvance(sessionId);
+
+      // 每次 CHAT session 完成都触发 commit message 重新生成
+      const sess = await prisma.session.findUnique({
+        where: { id: sessionId },
+        select: { workspaceId: true },
+      });
+      if (sess?.workspaceId) {
+        this.triggerCommitMessageGeneration(sess.workspaceId);
+      }
     }
   }
 }

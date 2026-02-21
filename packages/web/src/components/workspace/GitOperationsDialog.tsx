@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { GitBranch, GitMerge, AlertTriangle, CheckCircle, ArrowRight, Loader2, FileWarning, Sparkles, Pencil } from 'lucide-react'
+import { GitBranch, GitMerge, AlertTriangle, CheckCircle, ArrowRight, Loader2, FileWarning } from 'lucide-react'
 import type { GitOperationStatus } from '@agent-tower/shared'
 import { Modal } from '@/components/ui/modal'
 import { useRebaseWorkspace, useMergeWorkspace, useGitStatus } from '@/hooks/use-workspaces'
@@ -116,7 +116,6 @@ export function GitOperationsDialog({
   const [error, setError] = useState<string | null>(null)
   const [mergeStep, setMergeStep] = useState<MergeStep>('select')
   const [editableMessage, setEditableMessage] = useState('')
-  const [useAiMessage, setUseAiMessage] = useState(true)
 
   const hasConflicts = gitStatus ? gitStatus.conflictedFiles.length > 0 : false
   const isOperationInProgress = gitStatus ? gitStatus.operation !== 'idle' : false
@@ -128,7 +127,6 @@ export function GitOperationsDialog({
       setMergeStep('select')
       setError(null)
       setEditableMessage(commitMessage ?? '')
-      setUseAiMessage(!!commitMessage)
     }
   }, [open, commitMessage])
 
@@ -185,11 +183,8 @@ export function GitOperationsDialog({
         </div>
       ) : mergeStep === 'confirm' ? (
         <MergeConfirmView
-          commitMessage={commitMessage}
           editableMessage={editableMessage}
           setEditableMessage={setEditableMessage}
-          useAiMessage={useAiMessage}
-          setUseAiMessage={setUseAiMessage}
           error={error}
           isPending={mergeWorkspace.isPending}
           onConfirm={handleMergeConfirm}
@@ -282,15 +277,11 @@ function SelectOperationView({
 }
 
 function MergeConfirmView({
-  commitMessage, editableMessage, setEditableMessage,
-  useAiMessage, setUseAiMessage,
+  editableMessage, setEditableMessage,
   error, isPending, onConfirm, onBack, branchName, targetBranch,
 }: {
-  commitMessage?: string | null
   editableMessage: string
   setEditableMessage: (v: string) => void
-  useAiMessage: boolean
-  setUseAiMessage: (v: boolean) => void
   error: string | null
   isPending: boolean
   onConfirm: () => void
@@ -298,8 +289,6 @@ function MergeConfirmView({
   branchName: string
   targetBranch: string
 }) {
-  const hasAiMessage = !!commitMessage
-
   return (
     <div className="space-y-4">
       {/* Branch info */}
@@ -307,34 +296,6 @@ function MergeConfirmView({
         <span className="px-2.5 py-1 rounded-md bg-neutral-100 font-mono text-xs text-neutral-700">{branchName}</span>
         <ArrowRight size={14} className="text-neutral-400" />
         <span className="px-2.5 py-1 rounded-md bg-neutral-100 font-mono text-xs text-neutral-700">{targetBranch}</span>
-      </div>
-
-      {/* Message source toggle */}
-      <div className="flex gap-2">
-        {hasAiMessage && (
-          <button
-            onClick={() => { setUseAiMessage(true); setEditableMessage(commitMessage!) }}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-              useAiMessage
-                ? 'bg-violet-50 text-violet-700 border border-violet-200'
-                : 'bg-neutral-50 text-neutral-500 border border-neutral-200 hover:bg-neutral-100'
-            }`}
-          >
-            <Sparkles size={12} />
-            AI 生成
-          </button>
-        )}
-        <button
-          onClick={() => { setUseAiMessage(false); if (useAiMessage) setEditableMessage('') }}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-            !useAiMessage
-              ? 'bg-blue-50 text-blue-700 border border-blue-200'
-              : 'bg-neutral-50 text-neutral-500 border border-neutral-200 hover:bg-neutral-100'
-          }`}
-        >
-          <Pencil size={12} />
-          手动输入
-        </button>
       </div>
 
       {/* Commit message editor */}
