@@ -426,7 +426,7 @@ export function MobileTaskDetail({ task, onBack, onDeleteTask, isDeleting }: Mob
       {activeTab === 'chat' && (
         <div className="flex-1 flex flex-col min-h-0">
           {/* Scrollable Logs */}
-          <div ref={scrollContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-3 pt-3 pb-2">
+          <div ref={scrollContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto overflow-x-hidden px-3 pt-3 pb-2">
             {/* Task Description */}
             <div className="mb-3 pb-2 border-b border-neutral-100">
               <p className="text-[13px] text-neutral-500 leading-relaxed">{task.description}</p>

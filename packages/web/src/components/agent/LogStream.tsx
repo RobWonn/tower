@@ -115,7 +115,7 @@ const streamdownComponents = { img: MarkdownImage }
 // 1. User Message — 右对齐聊天气泡
 const UserMessage = memo(({ content, compact }: { content: string; compact?: boolean }) => (
   <div className={compact ? 'flex justify-end mb-4 mt-2' : 'flex justify-end mb-8 mt-4'}>
-    <div className={`relative bg-neutral-200 text-neutral-900 rounded-2xl rounded-tr-sm max-w-[85%] leading-relaxed ${
+    <div className={`relative bg-neutral-200 text-neutral-900 rounded-2xl rounded-tr-sm max-w-[85%] min-w-0 leading-relaxed ${
       compact ? 'px-3.5 py-2.5 text-[13px]' : 'px-5 py-3.5 text-sm'
     }`}>
       <Streamdown urlTransform={attachmentUrlTransform} components={streamdownComponents}>{content}</Streamdown>
@@ -163,7 +163,7 @@ const ThinkingBlock = memo(({ content, isOpenDefault = true }: { content: string
         style={{ maxHeight: isOpen ? contentHeight + 16 : 0 }}
       >
         <div ref={contentRef} className="pl-5 pt-1 pb-2 before:absolute before:left-[7px] before:top-1 before:bottom-2 before:w-px before:bg-neutral-100">
-          <div className="text-xs text-neutral-400 leading-relaxed whitespace-pre-wrap">
+          <div className="text-xs text-neutral-400 leading-relaxed whitespace-pre-wrap min-w-0">
             {content.replace(/^Thinking:\s*/i, '').trim()}
           </div>
         </div>
@@ -337,7 +337,7 @@ ToolGroupItem.displayName = 'ToolGroupItem'
 
 // 4. Agent 主文本 — 纯文本无图标
 const AgentText = memo(({ content, compact }: { content: string; compact?: boolean }) => (
-  <div className={`text-neutral-800 whitespace-pre-wrap ${compact ? 'text-[13px] leading-6 mb-1' : 'text-sm leading-7 mb-2'}`}>
+  <div className={`text-neutral-800 whitespace-pre-wrap min-w-0 ${compact ? 'text-[13px] leading-6 mb-1' : 'text-sm leading-7 mb-2'}`}>
     {content}
   </div>
 ))
@@ -345,7 +345,7 @@ AgentText.displayName = 'AgentText'
 
 // 5. Assistant Message — Streamdown 渲染 markdown
 const AssistantMessage = memo(({ content, compact }: { content: string; compact?: boolean }) => (
-  <div className={`text-neutral-800 ${compact ? 'text-[13px] leading-6 mb-1' : 'text-sm leading-7 mb-2'}`}>
+  <div className={`text-neutral-800 min-w-0 ${compact ? 'text-[13px] leading-6 mb-1' : 'text-sm leading-7 mb-2'}`}>
     <Streamdown>{content}</Streamdown>
   </div>
 ))
@@ -414,7 +414,7 @@ export const LogStream = forwardRef<LogStreamHandle, LogStreamProps>(
     }), [scrollElementRef])
 
     return (
-      <div className="w-full mx-auto pb-4">
+      <div className="w-full mx-auto pb-4 min-w-0" style={{ overflowWrap: 'anywhere' }}>
         {items.map((item) => (
           <div key={item.key}>
             {renderItem(item)}
