@@ -1,20 +1,15 @@
-import { useState, useMemo, useCallback, useImperativeHandle, forwardRef, memo, useRef, useEffect } from 'react'
+import { useState, useMemo, useImperativeHandle, forwardRef, memo, useRef, useEffect } from 'react'
 import { type LogEntry, LogType } from '@agent-tower/shared/log-adapter'
 import { ChevronRight, ChevronDown } from 'lucide-react'
 import { Streamdown } from 'streamdown'
 import type { UrlTransform } from 'streamdown'
-import { useVirtualizer } from '@tanstack/react-virtual'
 import { isTunnelAccess, getTunnelToken } from '@/lib/tunnel-token'
 import 'streamdown/styles.css'
 
 interface LogStreamProps {
   logs: LogEntry[]
-  /** 外部滚动容器 ref，virtualizer 需要它来计算可视区域 */
+  /** 外部滚动容器 ref，用于滚动到底部 */
   scrollElementRef: React.RefObject<HTMLDivElement | null>
-  /** scrollMargin: 滚动容器顶部到 LogStream 之间的偏移量（如 task description 高度） */
-  scrollMargin?: number
-  /** 紧凑模式 — 减少消息间距和 padding，适用于手机端 */
-  compact?: boolean
 }
 
 export interface LogStreamHandle {
@@ -404,61 +399,27 @@ function renderItem(item: RenderItem, compact?: boolean): React.ReactNode {
 // ============ Main Component ============
 
 export const LogStream = forwardRef<LogStreamHandle, LogStreamProps>(
-  function LogStream({ logs, scrollElementRef, scrollMargin = 0, compact }, ref) {
+  function LogStream({ logs, scrollElementRef }, ref) {
     const items = useMemo(() => groupConsecutiveTools(logs), [logs])
-
-    const virtualizer = useVirtualizer({
-      count: items.length,
-      getScrollElement: () => scrollElementRef.current,
-      estimateSize: () => 60,
-      overscan: 10,
-      scrollMargin,
-    })
 
     // 暴露 scrollToBottom 给父组件
     useImperativeHandle(ref, () => ({
       scrollToBottom: (behavior: 'instant' | 'smooth' = 'instant') => {
-        if (items.length === 0) return
-        virtualizer.scrollToIndex(items.length - 1, {
-          align: 'end',
-          behavior: behavior as any,
+        if (!scrollElementRef.current) return
+        scrollElementRef.current.scrollTo({
+          top: scrollElementRef.current.scrollHeight,
+          behavior: behavior as ScrollBehavior,
         })
       },
-    }), [items.length, virtualizer])
-
-    // 动态测量回调
-    const measureElement = useCallback(
-      (el: HTMLElement | null) => {
-        if (el) {
-          virtualizer.measureElement(el)
-        }
-      },
-      [virtualizer],
-    )
-
-    const virtualItems = virtualizer.getVirtualItems()
+    }), [scrollElementRef])
 
     return (
-      <div
-        className="w-full mx-auto pb-4 relative"
-        style={{ height: virtualizer.getTotalSize() }}
-      >
-        {virtualItems.map((virtualRow) => {
-          const item = items[virtualRow.index]
-          return (
-            <div
-              key={item.key}
-              ref={measureElement}
-              data-index={virtualRow.index}
-              className="absolute left-0 w-full"
-              style={{
-                top: virtualRow.start - virtualizer.options.scrollMargin,
-              }}
-            >
-              {renderItem(item, compact)}
-            </div>
-          )
-        })}
+      <div className="w-full mx-auto pb-4">
+        {items.map((item) => (
+          <div key={item.key}>
+            {renderItem(item)}
+          </div>
+        ))}
       </div>
     )
   },
