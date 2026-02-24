@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useCallback } from "react"
+import React, { useEffect, useRef, useCallback, useLayoutEffect } from "react"
 import { Terminal as XTerm } from "xterm"
 import { FitAddon } from "@xterm/addon-fit"
 import "xterm/css/xterm.css"
@@ -74,7 +74,7 @@ export const StandaloneTerminalView: React.FC<StandaloneTerminalViewProps> = Rea
     })
 
     // Initialize xterm
-    useEffect(() => {
+    useLayoutEffect(() => {
       if (!terminalRef.current) return
 
       const xterm = new XTerm({
@@ -91,13 +91,32 @@ export const StandaloneTerminalView: React.FC<StandaloneTerminalViewProps> = Rea
       xterm.loadAddon(fitAddon)
       xterm.open(terminalRef.current)
 
-      requestAnimationFrame(() => {
+      // 使用递归重试机制确保容器尺寸稳定后再 fit
+      const fitAndResize = (attempt = 0) => {
+        const maxAttempts = 5
+        if (attempt >= maxAttempts) return
+
         try {
+          const terminalEl = terminalRef.current
+          if (!terminalEl || terminalEl.clientWidth === 0 || terminalEl.clientHeight === 0) {
+            // 容器尺寸为 0，延迟重试
+            setTimeout(() => fitAndResize(attempt + 1), 50)
+            return
+          }
+
           fitAddon.fit()
+
+          // 立即通知后端调整 PTY 尺寸
+          resize(xterm.cols, xterm.rows)
         } catch {
-          // fit may fail during init
+          // fit 失败时重试
+          setTimeout(() => fitAndResize(attempt + 1), 50)
         }
-      })
+      }
+
+      // 立即尝试一次，然后延迟重试确保容器渲染完成
+      fitAndResize(0)
+      setTimeout(() => fitAndResize(1), 100)
 
       xtermRef.current = xterm
       fitAddonRef.current = fitAddon
@@ -107,7 +126,7 @@ export const StandaloneTerminalView: React.FC<StandaloneTerminalViewProps> = Rea
         xtermRef.current = null
         fitAddonRef.current = null
       }
-    }, [])
+    }, [resize])
 
     // Auto-create terminal on mount
     useEffect(() => {

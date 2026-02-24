@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useCallback } from "react"
+import React, { useEffect, useRef, useCallback, useLayoutEffect } from "react"
 import { Terminal as XTerm } from "xterm"
 import { FitAddon } from "@xterm/addon-fit"
 import { Terminal, Wifi, WifiOff, Loader2 } from "lucide-react"
@@ -119,7 +119,7 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({ sessionId }) => {
       : "disconnected"
 
   // 初始化 xterm
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!terminalRef.current) return
 
     const xterm = new XTerm({
@@ -158,14 +158,32 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({ sessionId }) => {
 
     xterm.open(terminalRef.current)
 
-    // 延迟 fit 以确保容器尺寸稳定
-    requestAnimationFrame(() => {
+    // 使用递归重试机制确保容器尺寸稳定后再 fit
+    const fitAndResize = (attempt = 0) => {
+      const maxAttempts = 5
+      if (attempt >= maxAttempts) return
+
       try {
+        const terminalEl = terminalRef.current
+        if (!terminalEl || terminalEl.clientWidth === 0 || terminalEl.clientHeight === 0) {
+          // 容器尺寸为 0，延迟重试
+          setTimeout(() => fitAndResize(attempt + 1), 50)
+          return
+        }
+
         fitAddon.fit()
+
+        // 立即通知后端调整 PTY 尺寸
+        resize(xterm.cols, xterm.rows)
       } catch {
-        // fit 可能在初始化时失败，忽略
+        // fit 失败时重试
+        setTimeout(() => fitAndResize(attempt + 1), 50)
       }
-    })
+    }
+
+    // 立即尝试一次，然后延迟重试确保容器渲染完成
+    fitAndResize(0)
+    setTimeout(() => fitAndResize(1), 100)
 
     xtermRef.current = xterm
     fitAddonRef.current = fitAddon
@@ -175,7 +193,7 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({ sessionId }) => {
       xtermRef.current = null
       fitAddonRef.current = null
     }
-  }, [])
+  }, [resize])
 
   // 键盘输入转发到 PTY
   useEffect(() => {
