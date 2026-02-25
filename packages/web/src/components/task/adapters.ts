@@ -174,6 +174,7 @@ export function adaptTaskForDetail(
 
   return {
     id: task.id,
+    projectId: project.id,
     projectName: project.name,
     projectColor: project.color || PROJECT_COLORS[hashStringToIndex(project.name, PROJECT_COLORS.length)],
     title: task.title,

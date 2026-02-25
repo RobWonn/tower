@@ -176,6 +176,7 @@ export function ProjectKanbanPage() {
     const project = projects.find(p => p.id === uiTask.projectId)
     return {
       id: uiTask.id,
+      projectId: uiTask.projectId,
       projectName: project?.name ?? 'Unknown',
       projectColor: project?.color ?? 'text-neutral-500',
       title: uiTask.title,

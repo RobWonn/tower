@@ -39,6 +39,9 @@ interface UpdateProjectInput {
   name?: string
   description?: string
   mainBranch?: string
+  copyFiles?: string | null
+  setupScript?: string | null
+  quickCommands?: string | null
 }
 
 // ============ Query Hooks ============

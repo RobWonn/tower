@@ -878,7 +878,7 @@ export function TaskDetail({ task, onDeleteTask, isDeleting, onTaskStatusChange 
         {/* Right: WorkspacePanel — takes remaining space */}
         {isWorkspaceOpen && (
           <div className="flex-1 flex flex-col min-w-0 bg-white">
-            <WorkspacePanel sessionId={sessionId || undefined} workingDir={workingDir} />
+            <WorkspacePanel sessionId={sessionId || undefined} workingDir={workingDir} projectId={task.projectId} />
           </div>
         )}
       </div>

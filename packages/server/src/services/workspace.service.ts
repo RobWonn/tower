@@ -4,8 +4,13 @@ import { WorktreeManager } from '../git/worktree.manager.js';
 import { execGit } from '../git/git-cli.js';
 import { NotFoundError, ServiceError } from '../errors.js';
 import { getSessionManager, getEventBus } from '../core/container.js';
+import { copyProjectFiles } from './copy-files.service.js';
+import { exec } from 'node:child_process';
+import { promisify } from 'node:util';
 import type { EventBus } from '../core/event-bus.js';
 import type { GitOperationStatus } from '@agent-tower/shared';
+
+const execAsync = promisify(exec);
 
 /** 过滤条件：只返回用户可见的 CHAT session */
 const visibleSessionsFilter = { where: { purpose: { not: SessionPurpose.COMMIT_MSG } } };
@@ -72,6 +77,9 @@ export class WorkspaceService {
       if (mergedWorkspace) {
         const worktreePath = await worktreeManager.ensureWorktreeExists(mergedWorkspace.branchName);
 
+        // 复用 worktree 时重新执行文件复制（worktree 可能被重建）
+        this.runCopyFiles(task.project.repoPath, worktreePath, task.project.copyFiles);
+
         const updated = await prisma.workspace.update({
           where: { id: mergedWorkspace.id },
           data: {
@@ -114,6 +122,10 @@ export class WorkspaceService {
 
       // WorktreeManager.create 内部已做分支名合法性校验和重复检查
       const worktreePath = await worktreeManager.create(branch);
+
+      // worktree 创建后：复制文件 + 执行 setup 脚本
+      this.runCopyFiles(task.project.repoPath, worktreePath, task.project.copyFiles);
+      await this.runSetupScript(worktreePath, task.project.setupScript);
 
       // 更新数据库记录：填入真正的 branchName 和 worktreePath
       const updated = await prisma.workspace.update({
@@ -418,6 +430,38 @@ export class WorkspaceService {
   }
 
   // ── Startup Prune ────────────────────────────────────────────────────────────
+
+  /**
+   * 复制项目配置的文件到 worktree
+   */
+  private runCopyFiles(repoPath: string, worktreePath: string, copyFiles: string | null): void {
+    if (!copyFiles?.trim()) return;
+    try {
+      copyProjectFiles(repoPath, worktreePath, copyFiles);
+    } catch (err) {
+      console.warn(
+        `[WorkspaceService] copyFiles failed: ${err instanceof Error ? err.message : err}`
+      );
+    }
+  }
+
+  /**
+   * 在 worktree 中执行 setup 脚本（逐行执行）
+   */
+  private async runSetupScript(worktreePath: string, setupScript: string | null): Promise<void> {
+    if (!setupScript?.trim()) return;
+    const commands = setupScript.split('\n').map((c) => c.trim()).filter(Boolean);
+    for (const cmd of commands) {
+      try {
+        await execAsync(cmd, { cwd: worktreePath, timeout: 300_000 });
+      } catch (err) {
+        console.warn(
+          `[WorkspaceService] Setup command failed: "${cmd}" - ${err instanceof Error ? err.message : err}`
+        );
+        // 不中断，继续执行下一条
+      }
+    }
+  }
 
   /**
    * 服务启动时调用：对所有项目执行 git worktree prune

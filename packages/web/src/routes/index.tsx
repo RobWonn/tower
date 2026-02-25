@@ -9,6 +9,7 @@ const DemoPage = lazy(() => import('@/pages/DemoPage').then(m => ({ default: m.D
 const AgentDemoPage = lazy(() => import('@/pages/AgentDemoPage').then(m => ({ default: m.AgentDemoPage })))
 const ProfileSettingsPage = lazy(() => import('@/pages/ProfileSettingsPage').then(m => ({ default: m.ProfileSettingsPage })))
 const NotificationSettingsPage = lazy(() => import('@/pages/NotificationSettingsPage').then(m => ({ default: m.NotificationSettingsPage })))
+const ProjectSettingsPage = lazy(() => import('@/pages/ProjectSettingsPage').then(m => ({ default: m.ProjectSettingsPage })))
 
 const router = createBrowserRouter([
   {
@@ -57,6 +58,14 @@ const router = createBrowserRouter([
             element: (
               <Suspense fallback={<div className="p-8">Loading...</div>}>
                 <NotificationSettingsPage />
+              </Suspense>
+            ),
+          },
+          {
+            path: 'projects',
+            element: (
+              <Suspense fallback={<div className="p-8">Loading...</div>}>
+                <ProjectSettingsPage />
               </Suspense>
             ),
           },

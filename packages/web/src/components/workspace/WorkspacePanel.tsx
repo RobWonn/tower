@@ -1,10 +1,12 @@
-import React, { useState, useRef, useEffect } from "react"
+import React, { useState, useRef, useEffect, useMemo } from "react"
 import { Code2, Terminal, Globe, GitGraph } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import { TerminalTabs } from "./TerminalTabs"
 import { EditorView } from "./EditorView"
 import { ChangesView } from "./ChangesView"
+import { useProject } from "@/hooks/use-projects"
+import type { QuickCommand } from "@agent-tower/shared"
 
 type WorkspaceTab = "editor" | "terminal" | "preview" | "changes"
 
@@ -14,6 +16,8 @@ export interface WorkspacePanelProps {
   /** Session ID 用于 Agent 终端 Tab 接入 PTY */
   sessionId?: string
   workingDir?: string
+  /** 项目 ID，用于获取快捷命令 */
+  projectId?: string
   /** 隐藏 Changes tab（移动端已有独立 Changes 视图时使用） */
   hideChanges?: boolean
 }
@@ -85,10 +89,18 @@ export const WorkspacePanel: React.FC<WorkspacePanelProps> = React.memo(
     className,
     sessionId: _sessionId,
     workingDir,
+    projectId,
     hideChanges,
   }) {
     const tabs = hideChanges ? MOBILE_TABS : DESKTOP_TABS
     const [activeTab, setActiveTab] = useState<WorkspaceTab>(hideChanges ? "editor" : "changes")
+
+    // Fetch project to get quickCommands
+    const { data: project } = useProject(projectId ?? '')
+    const quickCommands = useMemo<QuickCommand[]>(() => {
+      if (!project?.quickCommands) return []
+      try { return JSON.parse(project.quickCommands) } catch { return [] }
+    }, [project?.quickCommands])
 
     // Track all workingDirs that have been seen so each gets its own
     // TerminalTabs instance that stays mounted across task switches.
@@ -131,7 +143,7 @@ export const WorkspacePanel: React.FC<WorkspacePanelProps> = React.memo(
               className="h-full absolute inset-0"
               style={{ display: activeTab === "terminal" && workingDir === dir ? 'block' : 'none' }}
             >
-              <TerminalTabs cwd={dir} />
+              <TerminalTabs cwd={dir} quickCommands={quickCommands} />
             </div>
           ))}
 

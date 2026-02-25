@@ -58,6 +58,7 @@ export interface UITask {
  */
 export interface UITaskDetailData {
   id: string
+  projectId: string
   projectName: string
   projectColor: string
   title: string

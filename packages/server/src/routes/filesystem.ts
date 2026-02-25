@@ -46,7 +46,74 @@ function handleError(error: unknown, reply: any) {
   return { error: 'Internal server error', code: 'INTERNAL_ERROR' };
 }
 
+const completeQuerySchema = z.object({
+  basePath: z
+    .string()
+    .min(1, 'basePath is required')
+    .refine((v) => path.isAbsolute(v), { message: 'basePath must be absolute' }),
+  prefix: z.string().default(''),
+});
+
 export async function filesystemRoutes(app: FastifyInstance) {
+  /**
+   * GET /complete?basePath=<repo>&prefix=<partial>
+   * 文件路径自动补全：列出 basePath 下匹配 prefix 的文件和目录
+   */
+  app.get('/complete', async (request, reply) => {
+    try {
+      const { basePath: base, prefix } = completeQuerySchema.parse(request.query);
+
+      if (!fs.existsSync(base) || !fs.statSync(base).isDirectory()) {
+        return { results: [] };
+      }
+
+      // 拆分 prefix 为目录部分和名称前缀
+      const lastSlash = prefix.lastIndexOf('/');
+      const dirPart = lastSlash >= 0 ? prefix.slice(0, lastSlash) : '';
+      const namePart = lastSlash >= 0 ? prefix.slice(lastSlash + 1) : prefix;
+      const searchDir = path.join(base, dirPart);
+
+      if (!fs.existsSync(searchDir) || !fs.statSync(searchDir).isDirectory()) {
+        return { results: [] };
+      }
+
+      let entries: fs.Dirent[];
+      try {
+        entries = fs.readdirSync(searchDir, { withFileTypes: true });
+      } catch {
+        return { results: [] };
+      }
+
+      const IGNORED = new Set(['.git', '.hg', '.svn']);
+      const namePrefix = namePart.toLowerCase();
+
+      const results = entries
+        .filter((e) => {
+          if (IGNORED.has(e.name)) return false;
+          return e.name.toLowerCase().startsWith(namePrefix);
+        })
+        .slice(0, 20)
+        .map((e) => {
+          const isDir = e.isDirectory();
+          const relativePath = dirPart ? `${dirPart}/${e.name}` : e.name;
+          return {
+            name: e.name,
+            path: isDir ? `${relativePath}/` : relativePath,
+            type: isDir ? 'directory' as const : 'file' as const,
+          };
+        })
+        .sort((a, b) => {
+          // 目录优先
+          if (a.type !== b.type) return a.type === 'directory' ? -1 : 1;
+          return a.name.localeCompare(b.name);
+        });
+
+      return { results };
+    } catch (error) {
+      return handleError(error, reply);
+    }
+  });
+
   /**
    * GET /browse?path=<dir>
    * 列出指定目录下的子目录（不列文件），返回每个目录的 isGitRepo 标记

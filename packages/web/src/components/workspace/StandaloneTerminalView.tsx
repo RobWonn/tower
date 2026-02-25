@@ -14,6 +14,8 @@ export interface StandaloneTerminalViewProps {
   cwd?: string
   /** Called when the terminal process exits */
   onExit?: (exitCode: number) => void
+  /** Called when terminal is ready, exposes sendInput for external command injection */
+  onReady?: (api: { sendInput: (data: string) => void }) => void
 }
 
 // ============================================================
@@ -48,7 +50,7 @@ const XTERM_THEME = {
 // ============================================================
 
 export const StandaloneTerminalView: React.FC<StandaloneTerminalViewProps> = React.memo(
-  function StandaloneTerminalView({ cwd, onExit }) {
+  function StandaloneTerminalView({ cwd, onExit, onReady }) {
     const terminalRef = useRef<HTMLDivElement>(null)
     const xtermRef = useRef<XTerm | null>(null)
     const fitAddonRef = useRef<FitAddon | null>(null)
@@ -146,6 +148,13 @@ export const StandaloneTerminalView: React.FC<StandaloneTerminalViewProps> = Rea
 
       return () => disposable.dispose()
     }, [sendInput, isAttached])
+
+    // Expose sendInput to parent when terminal is attached
+    useEffect(() => {
+      if (isAttached) {
+        onReady?.({ sendInput })
+      }
+    }, [isAttached, sendInput, onReady])
 
     // Auto-fit on container resize
     useEffect(() => {

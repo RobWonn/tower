@@ -47,6 +47,12 @@ export enum SessionPurpose {
 
 // ============ 核心实体类型 ============
 
+/** 终端快捷命令 */
+export interface QuickCommand {
+  name: string
+  command: string
+}
+
 /** 项目 */
 export interface Project {
   id: string
@@ -57,6 +63,12 @@ export interface Project {
   repoPath: string
   /** 主分支名称，默认 "main" */
   mainBranch: string
+  /** 逗号分隔的 glob/路径列表，worktree 创建后自动复制 */
+  copyFiles?: string | null
+  /** 多行命令文本，worktree 创建后自动执行 */
+  setupScript?: string | null
+  /** JSON 字符串: QuickCommand[]，终端快捷命令 */
+  quickCommands?: string | null
   createdAt?: string
   updatedAt?: string
 }

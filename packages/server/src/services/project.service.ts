@@ -9,12 +9,18 @@ interface CreateProjectInput {
   description?: string;
   repoPath: string;
   mainBranch?: string;
+  copyFiles?: string;
+  setupScript?: string;
+  quickCommands?: string;
 }
 
 interface UpdateProjectInput {
   name?: string;
   description?: string;
   mainBranch?: string;
+  copyFiles?: string | null;
+  setupScript?: string | null;
+  quickCommands?: string | null;
 }
 
 interface PaginationParams {
@@ -153,6 +159,9 @@ export class ProjectService {
         description: input.description,
         repoPath: resolvedPath,
         mainBranch: input.mainBranch || 'main',
+        copyFiles: input.copyFiles,
+        setupScript: input.setupScript,
+        quickCommands: input.quickCommands,
       },
     });
   }

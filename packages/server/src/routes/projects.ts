@@ -8,12 +8,18 @@ const createProjectSchema = z.object({
   description: z.string().optional(),
   repoPath: z.string().min(1, 'repoPath is required'),
   mainBranch: z.string().default('main'),
+  copyFiles: z.string().optional(),
+  setupScript: z.string().optional(),
+  quickCommands: z.string().optional(),
 });
 
 const updateProjectSchema = z.object({
   name: z.string().min(1, 'name cannot be empty').optional(),
   description: z.string().optional(),
   mainBranch: z.string().optional(),
+  copyFiles: z.string().nullable().optional(),
+  setupScript: z.string().nullable().optional(),
+  quickCommands: z.string().nullable().optional(),
 });
 
 const paginationSchema = z.object({

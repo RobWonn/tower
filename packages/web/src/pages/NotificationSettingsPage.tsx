@@ -5,12 +5,13 @@ import {
   useTestNotificationChannel,
 } from '@/hooks/use-notifications'
 import { Button } from '@/components/ui/button'
+import { Select } from '@/components/ui/select'
 import { CheckCircle2, AlertCircle, Loader2, Link } from 'lucide-react'
 
 const CHANNEL_OPTIONS = [
   { value: 'none', label: '无' },
   { value: 'feishu', label: '飞书' },
-] as const
+]
 
 interface FormState {
   webhookUrl: string
@@ -123,17 +124,11 @@ export function NotificationSettingsPage() {
         <h3 className="text-[13px] font-semibold text-neutral-900 mb-1">第三方通知</h3>
         <p className="text-[12px] text-neutral-400 mb-3">选择一个第三方渠道接收通知</p>
 
-        <select
+        <Select
           value={channel}
-          onChange={(e) => handleChannelChange(e.target.value)}
-          className="px-3 py-1.5 border border-neutral-200 rounded-lg text-sm text-neutral-700 focus:outline-none focus:ring-1 focus:ring-neutral-300 bg-white"
-        >
-          {CHANNEL_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
+          onChange={(v) => handleChannelChange(v)}
+          options={CHANNEL_OPTIONS}
+        />
 
         {/* 飞书配置 */}
         {channel === 'feishu' && (

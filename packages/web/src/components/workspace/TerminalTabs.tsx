@@ -1,7 +1,9 @@
-import React, { useState, useCallback } from "react"
+import React, { useState, useCallback, useRef } from "react"
 import { Terminal, Plus, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { StandaloneTerminalView } from "./StandaloneTerminalView"
+import { QuickCommandsPopover } from "./QuickCommandsPopover"
+import type { QuickCommand } from "@agent-tower/shared"
 
 // ============================================================
 // Types
@@ -15,6 +17,8 @@ interface TerminalTab {
 export interface TerminalTabsProps {
   /** Working directory for new terminals */
   cwd?: string
+  /** Quick commands from project config */
+  quickCommands?: QuickCommand[]
 }
 
 // ============================================================
@@ -32,13 +36,15 @@ function nextTabId(): string {
 // ============================================================
 
 export const TerminalTabs: React.FC<TerminalTabsProps> = React.memo(
-  function TerminalTabs({ cwd }) {
+  function TerminalTabs({ cwd, quickCommands = [] }) {
     // Start with one terminal tab by default
     const [tabs, setTabs] = useState<TerminalTab[]>(() => {
       const id = nextTabId()
       return [{ id, label: "Shell 1" }]
     })
     const [activeTabId, setActiveTabId] = useState<string>(() => tabs[0].id)
+    // Map of tab id -> sendInput function
+    const sendInputMapRef = useRef<Map<string, (data: string) => void>>(new Map())
 
     // Add a new terminal tab
     const handleAddTab = useCallback(() => {
@@ -54,9 +60,9 @@ export const TerminalTabs: React.FC<TerminalTabsProps> = React.memo(
     // Close a terminal tab
     const handleCloseTab = useCallback((tabId: string, e: React.MouseEvent) => {
       e.stopPropagation()
+      sendInputMapRef.current.delete(tabId)
       setTabs(prev => {
         const next = prev.filter(t => t.id !== tabId)
-        // If we closed the active tab, switch to the last remaining tab
         if (tabId === activeTabId && next.length > 0) {
           setActiveTabId(next[next.length - 1].id)
         }
@@ -66,6 +72,7 @@ export const TerminalTabs: React.FC<TerminalTabsProps> = React.memo(
 
     // Handle terminal exit — remove the tab
     const handleTerminalExit = useCallback((tabId: string) => {
+      sendInputMapRef.current.delete(tabId)
       setTabs(prev => {
         const next = prev.filter(t => t.id !== tabId)
         if (tabId === activeTabId && next.length > 0) {
@@ -73,6 +80,19 @@ export const TerminalTabs: React.FC<TerminalTabsProps> = React.memo(
         }
         return next
       })
+    }, [activeTabId])
+
+    // Handle terminal ready — store sendInput ref
+    const handleTerminalReady = useCallback((tabId: string, api: { sendInput: (data: string) => void }) => {
+      sendInputMapRef.current.set(tabId, api.sendInput)
+    }, [])
+
+    // Execute quick command in active terminal
+    const handleQuickCommand = useCallback((command: string) => {
+      const sendInput = sendInputMapRef.current.get(activeTabId)
+      if (sendInput) {
+        sendInput(command + '\r')
+      }
     }, [activeTabId])
 
     return (
@@ -113,6 +133,14 @@ export const TerminalTabs: React.FC<TerminalTabsProps> = React.memo(
           >
             <Plus size={14} />
           </button>
+
+          {/* Quick commands button */}
+          {quickCommands.length > 0 && (
+            <QuickCommandsPopover
+              commands={quickCommands}
+              onSelect={handleQuickCommand}
+            />
+          )}
         </div>
 
         {/* Terminal content area */}
@@ -140,6 +168,7 @@ export const TerminalTabs: React.FC<TerminalTabsProps> = React.memo(
                 <StandaloneTerminalView
                   cwd={cwd}
                   onExit={() => handleTerminalExit(tab.id)}
+                  onReady={(api) => handleTerminalReady(tab.id, api)}
                 />
               </div>
             ))
