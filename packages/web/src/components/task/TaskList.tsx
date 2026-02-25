@@ -20,6 +20,8 @@ interface TaskListProps {
   activeTaskIds?: Set<string>
   /** 拖拽变更任务状态回调 */
   onTaskStatusChange?: (taskId: string, newStatus: UITaskStatus) => void
+  /** 删除任务回调 */
+  onDeleteTask?: (taskId: string) => void
 }
 
 /** 空状态 placeholder - 提升到组件外避免重复创建 */
@@ -70,9 +72,11 @@ export function TaskList({
   onCreateTask,
   activeTaskIds,
   onTaskStatusChange,
+  onDeleteTask,
 }: TaskListProps) {
   const [isFilterOpen, setIsFilterOpen] = useState(false)
   const [activeDragTask, setActiveDragTask] = useState<UITask | null>(null)
+  const [activeDragFromStatus, setActiveDragFromStatus] = useState<UITaskStatus | null>(null)
 
   // 需要一定拖拽距离才触发，避免点击误触
   const sensors = useSensors(
@@ -81,11 +85,14 @@ export function TaskList({
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
     const task = event.active.data.current?.task as UITask | undefined
+    const fromStatus = event.active.data.current?.fromStatus as UITaskStatus | undefined
     if (task) setActiveDragTask(task)
+    if (fromStatus) setActiveDragFromStatus(fromStatus)
   }, [])
 
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     setActiveDragTask(null)
+    setActiveDragFromStatus(null)
 
     const { active, over } = event
     if (!over) return
@@ -219,7 +226,7 @@ export function TaskList({
 
       {/* 任务分组列表 */}
       <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-        <div className="flex-1 overflow-y-auto py-4">
+        <div className="flex-1 overflow-y-auto py-4 relative">
           {TASK_GROUP_CONFIG.map(({ status, title, defaultOpen }) => (
             <TaskGroup
               key={status}
@@ -232,6 +239,9 @@ export function TaskList({
               projects={projects}
               activeTaskIds={activeTaskIds}
               isDragging={activeDragTask !== null}
+              dragFromStatus={activeDragFromStatus}
+              onTaskStatusChange={onTaskStatusChange}
+              onDeleteTask={onDeleteTask}
             />
           ))}
         </div>

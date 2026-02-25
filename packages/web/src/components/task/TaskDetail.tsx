@@ -33,6 +33,8 @@ interface TaskDetailProps {
   onDeleteTask?: (taskId: string) => void
   /** 删除中状态 */
   isDeleting?: boolean
+  /** 状态变更回调 */
+  onTaskStatusChange?: (taskId: string, newStatus: UITaskStatus) => void
 }
 
 // ============ Layout Constants ============
@@ -80,45 +82,65 @@ const EMPTY_STATE = (
 
 // ============ Status Badge Helper ============
 
-function StatusBadge({ status }: { status: UITaskStatus }) {
-  const config = {
-    [UITaskStatus.Running]: {
-      className: 'bg-blue-50 text-blue-700 border-blue-100',
-      icon: <IconRunning className="w-3 h-3 animate-pulse" />,
-    },
-    [UITaskStatus.Review]: {
-      className: 'bg-amber-50 text-amber-700 border-amber-100',
-      icon: <IconReview className="w-3 h-3" />,
-    },
-    [UITaskStatus.Pending]: {
-      className: 'bg-neutral-50 text-neutral-600 border-neutral-100',
-      icon: <IconPending className="w-3 h-3" />,
-    },
-    [UITaskStatus.Done]: {
-      className: 'bg-emerald-50 text-emerald-700 border-emerald-100',
-      icon: <IconDone className="w-3 h-3" />,
-    },
-    [UITaskStatus.Cancelled]: {
-      className: 'bg-neutral-50 text-neutral-500 border-neutral-200',
-      icon: <IconCancelled className="w-3 h-3" />,
-    },
-  }
+const STATUS_OPTIONS = [
+  { status: UITaskStatus.Review, className: 'bg-amber-50 text-amber-700 border-amber-100', hoverClass: 'hover:bg-amber-100', icon: <IconReview className="w-3 h-3" /> },
+  { status: UITaskStatus.Running, className: 'bg-blue-50 text-blue-700 border-blue-100', hoverClass: 'hover:bg-blue-100', icon: <IconRunning className="w-3 h-3" /> },
+  { status: UITaskStatus.Pending, className: 'bg-neutral-50 text-neutral-600 border-neutral-100', hoverClass: 'hover:bg-neutral-100', icon: <IconPending className="w-3 h-3" /> },
+  { status: UITaskStatus.Done, className: 'bg-emerald-50 text-emerald-700 border-emerald-100', hoverClass: 'hover:bg-emerald-100', icon: <IconDone className="w-3 h-3" /> },
+  { status: UITaskStatus.Cancelled, className: 'bg-neutral-50 text-neutral-500 border-neutral-200', hoverClass: 'hover:bg-neutral-200', icon: <IconCancelled className="w-3 h-3" /> },
+] as const
 
-  const { className, icon } = config[status]
+function StatusBadge({ status, onChangeStatus }: { status: UITaskStatus; onChangeStatus?: (newStatus: UITaskStatus) => void }) {
+  const [isOpen, setIsOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!isOpen) return
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setIsOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [isOpen])
+
+  const current = STATUS_OPTIONS.find(o => o.status === status)!
 
   return (
-    <div
-      className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border ${className}`}
-    >
-      {icon}
-      <span>{status}</span>
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => onChangeStatus && setIsOpen(v => !v)}
+        className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border transition-colors ${current.className} ${onChangeStatus ? 'cursor-pointer hover:opacity-80' : ''}`}
+      >
+        {current.icon}
+        <span>{status}</span>
+        {onChangeStatus && (
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" className={`ml-0.5 transition-transform ${isOpen ? 'rotate-180' : ''}`}>
+            <path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+          </svg>
+        )}
+      </button>
+
+      {isOpen && (
+        <div className="absolute right-0 top-full mt-2 w-40 bg-white rounded-lg border border-neutral-200 shadow-lg z-50 py-1 animate-in fade-in zoom-in-95 duration-100">
+          {STATUS_OPTIONS.filter(o => o.status !== status).map(opt => (
+            <button
+              key={opt.status}
+              onClick={() => { onChangeStatus?.(opt.status); setIsOpen(false) }}
+              className={`w-full flex items-center gap-2 px-3 py-2 text-xs font-medium transition-colors ${opt.hoverClass}`}
+            >
+              <span className={opt.className.split(' ').find(c => c.startsWith('text-'))}>{opt.icon}</span>
+              <span className="text-neutral-700">{opt.status}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
 
 // ============ TaskDetail Component ============
 
-export function TaskDetail({ task, onDeleteTask, isDeleting }: TaskDetailProps) {
+export function TaskDetail({ task, onDeleteTask, isDeleting, onTaskStatusChange }: TaskDetailProps) {
   const [input, setInput] = useState('')
   const [isStartDialogOpen, setIsStartDialogOpen] = useState(false)
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false)
@@ -623,7 +645,10 @@ export function TaskDetail({ task, onDeleteTask, isDeleting }: TaskDetailProps) 
         </div>
 
         <div className="flex items-center gap-4">
-          <StatusBadge status={task.status} />
+          <StatusBadge
+            status={task.status}
+            onChangeStatus={onTaskStatusChange ? (newStatus) => onTaskStatusChange(task.id, newStatus) : undefined}
+          />
 
           {/* Git Operations */}
           {activeWorkspaceId && (

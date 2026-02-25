@@ -530,6 +530,7 @@ export function ProjectKanbanPage() {
             onCreateTask={handleCreateTask}
             activeTaskIds={activeTaskIds}
             onTaskStatusChange={handleTaskStatusChange}
+            onDeleteTask={handleDeleteTask}
           />
         )}
 
@@ -545,6 +546,7 @@ export function ProjectKanbanPage() {
           task={taskDetailData}
           onDeleteTask={handleDeleteTask}
           isDeleting={deleteTask.isPending}
+          onTaskStatusChange={handleTaskStatusChange}
         />
       </div>
 
