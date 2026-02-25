@@ -152,16 +152,20 @@ export const StandaloneTerminalView: React.FC<StandaloneTerminalViewProps> = Rea
       if (!terminalRef.current) return
 
       const observer = new ResizeObserver(() => {
-        try {
-          const fitAddon = fitAddonRef.current
-          const xterm = xtermRef.current
-          if (fitAddon && xterm) {
-            fitAddon.fit()
-            resize(xterm.cols, xterm.rows)
+        // 使用 rAF 确保浏览器完成布局计算后再 fit
+        requestAnimationFrame(() => {
+          try {
+            const fitAddon = fitAddonRef.current
+            const xterm = xtermRef.current
+            const el = terminalRef.current
+            if (fitAddon && xterm && el && el.clientWidth > 0 && el.clientHeight > 0) {
+              fitAddon.fit()
+              resize(xterm.cols, xterm.rows)
+            }
+          } catch {
+            // ignore fit errors
           }
-        } catch {
-          // ignore fit errors
-        }
+        })
       })
 
       observer.observe(terminalRef.current)
@@ -169,18 +173,17 @@ export const StandaloneTerminalView: React.FC<StandaloneTerminalViewProps> = Rea
     }, [resize])
 
     return (
-      <div className="flex h-full flex-col bg-[#1e1e1e]">
-        {/* Terminal loading state */}
+      <div className="relative flex h-full flex-col bg-[#1e1e1e]">
+        {/* Terminal loading overlay */}
         {!terminalId && (
-          <div className="flex-1 flex items-center justify-center text-neutral-500 text-xs">
+          <div className="absolute inset-0 flex items-center justify-center text-neutral-500 text-xs z-10 bg-[#1e1e1e]">
             Starting terminal...
           </div>
         )}
-        {/* Terminal body */}
+        {/* Terminal body — 始终渲染以确保 xterm 有正确尺寸的容器 */}
         <div
           ref={terminalRef}
           className="flex-1 overflow-hidden px-1 pt-1"
-          style={{ display: terminalId ? 'block' : 'none' }}
         />
       </div>
     )

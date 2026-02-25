@@ -219,16 +219,20 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({ sessionId }) => {
     if (!terminalRef.current) return
 
     const observer = new ResizeObserver(() => {
-      try {
-        const fitAddon = fitAddonRef.current
-        const xterm = xtermRef.current
-        if (fitAddon && xterm) {
-          fitAddon.fit()
-          resize(xterm.cols, xterm.rows)
+      // 使用 rAF 确保浏览器完成布局计算后再 fit
+      requestAnimationFrame(() => {
+        try {
+          const fitAddon = fitAddonRef.current
+          const xterm = xtermRef.current
+          const el = terminalRef.current
+          if (fitAddon && xterm && el && el.clientWidth > 0 && el.clientHeight > 0) {
+            fitAddon.fit()
+            resize(xterm.cols, xterm.rows)
+          }
+        } catch {
+          // 忽略 fit 错误
         }
-      } catch {
-        // 忽略 fit 错误
-      }
+      })
     })
 
     observer.observe(terminalRef.current)
