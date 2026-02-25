@@ -38,7 +38,7 @@ export const TerminalTabs: React.FC<TerminalTabsProps> = React.memo(
       const id = nextTabId()
       return [{ id, label: "Shell 1" }]
     })
-    const [activeTabId, setActiveTabId] = useState<string>(tabs[0].id)
+    const [activeTabId, setActiveTabId] = useState<string>(() => tabs[0].id)
 
     // Add a new terminal tab
     const handleAddTab = useCallback(() => {
