@@ -476,7 +476,7 @@ export function ProjectKanbanPage() {
                 <label className="block text-sm font-medium text-neutral-700 mb-1.5">Task Title</label>
                 <input type="text" value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)} placeholder="e.g., Implement login flow"
                   className="w-full px-3 py-2 border border-neutral-200 rounded-lg text-sm focus:outline-none focus:border-neutral-400" disabled={createStep !== 'idle'}
-                  onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) handleSubmitTask() }} />
+                  onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.nativeEvent.keyCode !== 229) handleSubmitTask() }} />
               </div>
               <div>
                 <label className="block text-sm font-medium text-neutral-700 mb-1.5">Description</label>
@@ -679,7 +679,7 @@ export function ProjectKanbanPage() {
                 className="w-full px-3 py-2 border border-neutral-200 rounded-lg text-sm focus:outline-none focus:border-neutral-400 transition-colors"
                 disabled={createStep !== 'idle'}
                 onKeyDown={e => {
-                  if (e.key === 'Enter' && !e.nativeEvent.isComposing) handleSubmitTask()
+                  if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.nativeEvent.keyCode !== 229) handleSubmitTask()
                 }}
               />
             </div>

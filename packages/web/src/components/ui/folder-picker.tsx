@@ -129,7 +129,7 @@ export function FolderPicker({ value, onChange, placeholder }: FolderPickerProps
 
   // === 手动输入路径后按回车 ===
   const handleInputKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
+    if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.nativeEvent.keyCode !== 229) {
       e.preventDefault()
       const trimmed = inputValue.trim()
       if (trimmed) {

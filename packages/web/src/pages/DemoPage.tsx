@@ -184,7 +184,7 @@ export function DemoPage() {
               type="text"
               value={prompt}
               onChange={e => setPrompt(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && !e.nativeEvent.isComposing && handleStart()}
+              onKeyDown={e => e.key === 'Enter' && !e.nativeEvent.isComposing && e.nativeEvent.keyCode !== 229 && handleStart()}
               placeholder="输入你的问题或任务..."
               className="flex-1 px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
@@ -241,7 +241,7 @@ export function DemoPage() {
               type="text"
               value={followUpMessage}
               onChange={e => setFollowUpMessage(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && !e.repeat && !e.nativeEvent.isComposing && handleSendMessage()}
+              onKeyDown={e => e.key === 'Enter' && !e.repeat && !e.nativeEvent.isComposing && e.nativeEvent.keyCode !== 229 && handleSendMessage()}
               placeholder="发送后续消息..."
               className="flex-1 px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
