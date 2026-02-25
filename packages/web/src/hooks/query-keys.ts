@@ -58,4 +58,8 @@ export const queryKeys = {
   tunnel: {
     status: ['tunnel', 'status'] as const,
   },
+
+  notifications: {
+    settings: ['notifications', 'settings'] as const,
+  },
 }

@@ -175,3 +175,22 @@ export interface Attachment {
   storagePath: string
   createdAt?: string
 }
+
+// ============ 通知类型 ============
+
+/** 第三方通知渠道 */
+export type ThirdPartyChannel = 'none' | 'feishu'
+
+/** 通知事件类型 */
+export type NotificationEventType = 'task_in_review' | 'task_failed'
+
+/** 通知配置 */
+export interface NotificationSettings {
+  id: string
+  osNotificationEnabled: boolean
+  thirdPartyChannel: ThirdPartyChannel
+  feishuWebhookUrl: string | null
+  thirdPartyBaseUrl: string | null
+  taskInReviewTitleTemplate: string
+  taskInReviewBodyTemplate: string
+}

@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify'
 import { authMiddleware } from './middleware/index.js'
 import { SocketGateway } from './socket-gateway.js'
 import { NAMESPACE, type AgentStatusPayload } from './events.js'
-import { getEventBus, getSessionManager, getTerminalManager } from '../core/container.js'
+import { getEventBus, getSessionManager, getTerminalManager, getNotificationService } from '../core/container.js'
 
 let io: Server | null = null
 let socketGateway: SocketGateway | null = null
@@ -40,6 +40,7 @@ export async function initializeSocket(fastify: FastifyInstance): Promise<Server
   nsp.use(authMiddleware)
 
   const tm = await getTerminalManager()
+  getNotificationService()
   socketGateway = new SocketGateway(nsp, getEventBus(), getSessionManager(), tm)
   nsp.on('connection', (socket) => {
     console.log(`[Socket] Connected: ${socket.id}`)

@@ -112,3 +112,19 @@ model Attachment {
 
   @@index([hash])
 }
+
+// 通知配置 (单例，只有一行)
+// thirdPartyChannel: none, feishu
+model NotificationSettings {
+  id                    String  @id @default("singleton")
+  osNotificationEnabled Boolean @default(true)
+  thirdPartyChannel     String  @default("none")
+  feishuWebhookUrl      String?
+
+  // 第三方通知跳转地址
+  thirdPartyBaseUrl String?
+
+  // 通知模板
+  taskInReviewTitleTemplate String  @default("Agent Tower")
+  taskInReviewBodyTemplate  String  @default("✅ \"{taskTitle}\" 已完成，等待审查")
+}
