@@ -171,14 +171,13 @@ export function TaskDetail({ task, onDeleteTask, isDeleting, onTaskStatusChange 
   const { data: workspaces, isLoading: isLoadingWorkspaces } = useWorkspaces(task?.id ?? '')
   const setupProgress = useWorkspaceSetupProgress(task?.id)
 
-  // Find the latest relevant session from active workspaces.
+  // Find the latest relevant session from workspaces.
   // We prioritize RUNNING > PENDING > terminal states, and within each bucket
   // pick the newest by available timestamps to avoid selecting stale sessions.
+  // When no ACTIVE workspace has sessions, fall back to MERGED workspace sessions
+  // so that communication history remains visible after merging code.
   const activeSession = useMemo(() => {
     if (!workspaces) return null
-    const allSessions: Session[] = workspaces
-      .filter((ws) => ws.status === 'ACTIVE' && Array.isArray(ws.sessions))
-      .flatMap((ws) => ws.sessions ?? [])
 
     const getSessionTime = (session: Session): number => {
       const createdAt = (session as Session & { createdAt?: string }).createdAt
@@ -191,21 +190,41 @@ export function TaskDetail({ task, onDeleteTask, isDeleting, onTaskStatusChange 
       return Number.isNaN(ts) ? 0 : ts
     }
 
-    const pickLatest = (statuses: SessionStatus[]): Session | null => {
-      const candidates = allSessions.filter((s) => statuses.includes(s.status))
+    const pickLatest = (sessions: Session[], statuses: SessionStatus[]): Session | null => {
+      const candidates = sessions.filter((s) => statuses.includes(s.status))
       if (candidates.length === 0) return null
       return candidates.sort((a, b) => getSessionTime(b) - getSessionTime(a))[0] ?? null
     }
 
-    return (
-      pickLatest([SessionStatus.RUNNING]) ??
-      pickLatest([SessionStatus.PENDING]) ??
-      pickLatest([SessionStatus.COMPLETED, SessionStatus.FAILED, SessionStatus.CANCELLED])
-    )
+    // First try ACTIVE workspaces
+    const activeSessions: Session[] = workspaces
+      .filter((ws) => ws.status === 'ACTIVE' && Array.isArray(ws.sessions))
+      .flatMap((ws) => ws.sessions ?? [])
+
+    const fromActive =
+      pickLatest(activeSessions, [SessionStatus.RUNNING]) ??
+      pickLatest(activeSessions, [SessionStatus.PENDING]) ??
+      pickLatest(activeSessions, [SessionStatus.COMPLETED, SessionStatus.FAILED, SessionStatus.CANCELLED])
+
+    if (fromActive) return fromActive
+
+    // Fallback: show the latest session from MERGED workspaces (read-only history)
+    const mergedSessions: Session[] = workspaces
+      .filter((ws) => ws.status === 'MERGED' && Array.isArray(ws.sessions))
+      .flatMap((ws) => ws.sessions ?? [])
+
+    return pickLatest(mergedSessions, [SessionStatus.COMPLETED, SessionStatus.FAILED, SessionStatus.CANCELLED])
   }, [workspaces])
 
   const sessionId = activeSession?.id ?? ''
   const isSessionActive = activeSession?.status === SessionStatus.RUNNING || activeSession?.status === SessionStatus.PENDING
+
+  // Whether the displayed session comes from a MERGED workspace (read-only history, no active worktree)
+  const isReadOnlySession = useMemo(() => {
+    if (!activeSession || !workspaces) return false
+    const hasActiveWs = workspaces.some((ws) => ws.status === 'ACTIVE' && ws.sessions?.some((s) => s.id === activeSession.id))
+    return !hasActiveWs
+  }, [activeSession, workspaces])
 
   // Derive workingDir from the active workspace's worktreePath
   const workingDir = useMemo(() => {
@@ -737,6 +756,17 @@ export function TaskDetail({ task, onDeleteTask, isDeleting, onTaskStatusChange 
           )}
 
           {/* Input Area */}
+          {isReadOnlySession ? (
+            <div className="p-6 pt-3 bg-white flex-shrink-0 w-full z-10 pb-6 border-t border-neutral-100">
+              <div className="flex items-center justify-between bg-neutral-50 rounded-xl border border-neutral-200 px-4 py-3">
+                <span className="text-sm text-neutral-500">代码已合并，以上为历史沟通记录</span>
+                <Button size="sm" onClick={() => setIsStartDialogOpen(true)}>
+                  <Play size={14} className="mr-1.5" />
+                  启动新 Agent
+                </Button>
+              </div>
+            </div>
+          ) : (
           <div
             className="p-6 pt-2 bg-white flex-shrink-0 w-full z-10 pb-6 border-t border-transparent"
             onDragOver={handleDragOver}
@@ -814,6 +844,7 @@ export function TaskDetail({ task, onDeleteTask, isDeleting, onTaskStatusChange 
               </div>
             </div>
           </div>
+          )}
         </div>
 
         {/* Resizer — only visible when WorkspacePanel is open */}
