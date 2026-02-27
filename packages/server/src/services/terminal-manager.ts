@@ -12,6 +12,17 @@ const TERMINAL_TTL_MS = 30 * 60 * 1000; // 30 minutes idle timeout
 const TTL_CHECK_INTERVAL_MS = 60 * 1000; // check every 60 seconds
 const DEFAULT_SHELL = process.env.SHELL || '/bin/zsh';
 
+/** agent-tower 内部注入的环境变量，不应泄漏到用户终端 */
+const INTERNAL_ENV_KEYS = ['AGENT_TOWER_DATABASE_URL', 'AGENT_TOWER_DATA_DIR', 'AGENT_TOWER_WEB_DIR'];
+
+function cleanInternalEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const cleaned = { ...env };
+  for (const key of INTERNAL_ENV_KEYS) {
+    delete cleaned[key];
+  }
+  return cleaned;
+}
+
 // ============================================================
 // Types
 // ============================================================
@@ -78,7 +89,7 @@ export class TerminalManager {
       cols,
       rows,
       cwd,
-      env: process.env as Record<string, string>,
+      env: cleanInternalEnv(process.env) as Record<string, string>,
     });
 
     const cleanups: Array<{ dispose(): void }> = [];

@@ -4,7 +4,7 @@ generator client {
 
 datasource db {
   provider = "sqlite"
-  url      = env("DATABASE_URL")
+  url      = env("AGENT_TOWER_DATABASE_URL")
 }
 
 // 项目

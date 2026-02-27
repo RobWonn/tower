@@ -89,7 +89,7 @@ function ensureDatabase(dbPath: string, schemaPath: string) {
   try {
     execFileSync(prismaBin, ['db', 'push', '--skip-generate', `--schema=${schemaPath}`], {
       stdio: 'pipe',
-      env: { ...process.env, DATABASE_URL: `file:${dbPath}` },
+      env: { ...process.env, AGENT_TOWER_DATABASE_URL: `file:${dbPath}` },
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -109,7 +109,7 @@ async function main() {
 
   // 设置环境变量（必须在 import app 之前，因为 Prisma client 在模块加载时初始化）
   const dbPath = path.join(dataDir, 'data.db');
-  process.env.DATABASE_URL = `file:${dbPath}`;
+  process.env.AGENT_TOWER_DATABASE_URL = `file:${dbPath}`;
   process.env.AGENT_TOWER_DATA_DIR = dataDir;
   process.env.AGENT_TOWER_WEB_DIR = 'web'; // 相对于 __dirname (dist/)，即 dist/web/
   process.env.NODE_ENV = process.env.NODE_ENV || 'production';
