@@ -8,8 +8,8 @@ import 'streamdown/styles.css'
 
 interface LogStreamProps {
   logs: LogEntry[]
-  /** 外部滚动容器 ref，用于滚动到底部 */
-  scrollElementRef: React.RefObject<HTMLDivElement | null>
+  /** 外部滚动容器 ref，用于滚动到底部（可选，仅 legacy 用法需要） */
+  scrollElementRef?: React.RefObject<HTMLDivElement | null>
 }
 
 export interface LogStreamHandle {
@@ -402,10 +402,10 @@ export const LogStream = forwardRef<LogStreamHandle, LogStreamProps>(
   function LogStream({ logs, scrollElementRef }, ref) {
     const items = useMemo(() => groupConsecutiveTools(logs), [logs])
 
-    // 暴露 scrollToBottom 给父组件
+    // 暴露 scrollToBottom 给父组件（仅在传入 scrollElementRef 时有效）
     useImperativeHandle(ref, () => ({
       scrollToBottom: (behavior: 'instant' | 'smooth' = 'instant') => {
-        if (!scrollElementRef.current) return
+        if (!scrollElementRef?.current) return
         scrollElementRef.current.scrollTo({
           top: scrollElementRef.current.scrollHeight,
           behavior: behavior as ScrollBehavior,

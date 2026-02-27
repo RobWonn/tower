@@ -1,10 +1,10 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
+import { useStickToBottom } from 'use-stick-to-bottom'
 import { useQueryClient } from '@tanstack/react-query'
 import { SessionStatus, type Session } from '@agent-tower/shared'
 import { LogStream, TodoPanel, TokenUsageIndicator } from '@/components/agent'
-import type { LogStreamHandle } from '@/components/agent'
 import {
-  ArrowLeft, ArrowUp, Paperclip, Play, Square,
+  ArrowLeft, ArrowUp, ArrowDown, Paperclip, Play, Square,
   MessageSquare, FolderOpen, GitGraph, Code2, Trash2, MoreVertical,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -63,11 +63,10 @@ export function MobileTaskDetail({ task, onBack, onDeleteTask, isDeleting }: Mob
   const moreMenuRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const logStreamRef = useRef<LogStreamHandle>(null)
-  const scrollContainerRef = useRef<HTMLDivElement>(null)
-  const scrollStateRef = useRef<'following' | 'user-scrolling' | 'programmatic'>('following')
-  const cooldownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const [isInitialLoad, setIsInitialLoad] = useState(true)
+  const { scrollRef, contentRef, isAtBottom, scrollToBottom } = useStickToBottom({
+    resize: 'smooth',
+    initial: 'instant',
+  })
 
   const queryClient = useQueryClient()
 
@@ -189,76 +188,10 @@ export function MobileTaskDetail({ task, onBack, onDeleteTask, isDeleting }: Mob
   // useNormalizedLogs' internal cleanup already sends UNSUBSCRIBE for the
   // old sessionId when sessionId changes.
 
-  // Reset scroll on task change
+  // Scroll to bottom when switching tasks
   useEffect(() => {
-    scrollStateRef.current = 'following'
-    setIsInitialLoad(true)
-    if (cooldownTimerRef.current) clearTimeout(cooldownTimerRef.current)
-  }, [task.id])
-
-  // Scroll detection
-  const handleUserScrollIntent = useCallback(() => {
-    if (scrollStateRef.current === 'programmatic') return
-    scrollStateRef.current = 'user-scrolling'
-  }, [])
-
-  const handleScroll = useCallback(() => {
-    if (scrollStateRef.current !== 'user-scrolling') return
-    const el = scrollContainerRef.current
-    if (!el) return
-    if (el.scrollHeight - el.scrollTop - el.clientHeight < 2) {
-      scrollStateRef.current = 'following'
-    }
-  }, [])
-
-  useEffect(() => {
-    const el = scrollContainerRef.current
-    if (!el) return
-    el.addEventListener('wheel', handleUserScrollIntent, { passive: true })
-    el.addEventListener('touchmove', handleUserScrollIntent, { passive: true })
-    return () => {
-      el.removeEventListener('wheel', handleUserScrollIntent)
-      el.removeEventListener('touchmove', handleUserScrollIntent)
-    }
-  }, [handleUserScrollIntent])
-
-  // Auto-scroll
-  useEffect(() => {
-    if (scrollStateRef.current !== 'following') return
-    if (isInitialLoad && logs.length > 0) {
-      setIsInitialLoad(false)
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          logStreamRef.current?.scrollToBottom('instant')
-        })
-      })
-      return
-    }
-    scrollStateRef.current = 'programmatic'
-    logStreamRef.current?.scrollToBottom('smooth')
-    if (cooldownTimerRef.current) clearTimeout(cooldownTimerRef.current)
-    cooldownTimerRef.current = setTimeout(() => {
-      if (scrollStateRef.current === 'programmatic') scrollStateRef.current = 'following'
-    }, 300)
-  }, [logs])
-
-  // Snapshot loaded
-  const prevLoadingRef = useRef(isLoadingSnapshot)
-  useEffect(() => {
-    const wasLoading = prevLoadingRef.current
-    prevLoadingRef.current = isLoadingSnapshot
-    if (wasLoading && !isLoadingSnapshot) {
-      setIsInitialLoad(false)
-      if (logs.length > 0) {
-        scrollStateRef.current = 'following'
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            logStreamRef.current?.scrollToBottom('instant')
-          })
-        })
-      }
-    }
-  }, [isLoadingSnapshot, logs.length])
+    scrollToBottom()
+  }, [task.id, scrollToBottom])
 
   // ============ Actions ============
 
@@ -427,7 +360,9 @@ export function MobileTaskDetail({ task, onBack, onDeleteTask, isDeleting }: Mob
       {activeTab === 'chat' && (
         <div className="flex-1 flex flex-col min-h-0">
           {/* Scrollable Logs */}
-          <div ref={scrollContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto overflow-x-hidden px-3 pt-3 pb-2">
+          <div className="relative flex-1 min-h-0">
+            <div ref={scrollRef} className="h-full overflow-y-auto overflow-x-hidden px-3 pt-3 pb-2">
+            <div ref={contentRef}>
             {/* Task Description */}
             <div className="mb-3 pb-2 border-b border-neutral-100">
               <p className="text-[13px] text-neutral-500 leading-relaxed">{task.description}</p>
@@ -436,14 +371,14 @@ export function MobileTaskDetail({ task, onBack, onDeleteTask, isDeleting }: Mob
             {isLoadingWorkspaces ? (
               <LoadingSpinner label="Loading..." />
             ) : sessionId ? (
-              isLoadingSnapshot || (logs.length === 0 && isInitialLoad) ? (
+              isLoadingSnapshot ? (
                 <LoadingSpinner label="Loading logs..." />
               ) : logs.length === 0 ? (
                 <div className="text-neutral-400 text-center py-8 text-sm">
                   {isSessionActive ? 'Waiting for agent output...' : 'No logs recorded.'}
                 </div>
               ) : (
-                <LogStream ref={logStreamRef} logs={logs} scrollElementRef={scrollContainerRef} />
+                <LogStream logs={logs} />
               )
             ) : (
               /* No session — show start agent CTA */
@@ -460,6 +395,20 @@ export function MobileTaskDetail({ task, onBack, onDeleteTask, isDeleting }: Mob
                   启动 Agent
                 </Button>
               </div>
+            )}
+            </div>
+          </div>
+
+            {/* Scroll to bottom button */}
+            {!isAtBottom && (
+              <button
+                onClick={() => scrollToBottom()}
+                className="absolute bottom-2 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1 px-2.5 py-1 bg-white/90 backdrop-blur-sm border border-neutral-200 rounded-full shadow-md text-[11px] text-neutral-600 active:bg-white transition-all"
+                aria-label="Scroll to bottom"
+              >
+                <ArrowDown size={12} />
+                <span>回到底部</span>
+              </button>
             )}
           </div>
 
