@@ -264,30 +264,81 @@ export function MobileTaskDetail({ task, onBack, onDeleteTask, isDeleting }: Mob
   // Instead it scrolls the page up, leaving blank space below.
   // We use position:fixed and pin the container to the actual visible area
   // using visualViewport's height + offsetTop.
+  //
+  // IMPORTANT: only reposition on `resize` (keyboard open/close) unconditionally.
+  // `scroll` events are suppressed while the user is actively touching, because
+  // iOS fires viewport scroll during normal content scrolling, which causes the
+  // container to jump in the opposite direction ("reverse scrolling").
   const containerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const vv = window.visualViewport
     if (!vv) return
 
-    const update = () => {
+    let isTouching = false
+
+    const applyViewport = () => {
       if (!containerRef.current) return
       containerRef.current.style.height = `${vv.height}px`
       containerRef.current.style.top = `${vv.offsetTop}px`
     }
 
-    vv.addEventListener('resize', update)
-    vv.addEventListener('scroll', update)
-    return () => {
-      vv.removeEventListener('resize', update)
-      vv.removeEventListener('scroll', update)
+    const onResize = () => applyViewport()
+    const onScroll = () => { if (!isTouching) applyViewport() }
+    const onTouchStart = () => { isTouching = true }
+    const onTouchEnd = () => {
+      isTouching = false
+      requestAnimationFrame(applyViewport)
     }
+
+    vv.addEventListener('resize', onResize)
+    vv.addEventListener('scroll', onScroll)
+    document.addEventListener('touchstart', onTouchStart, { passive: true })
+    document.addEventListener('touchend', onTouchEnd, { passive: true })
+    document.addEventListener('touchcancel', onTouchEnd, { passive: true })
+    return () => {
+      vv.removeEventListener('resize', onResize)
+      vv.removeEventListener('scroll', onScroll)
+      document.removeEventListener('touchstart', onTouchStart)
+      document.removeEventListener('touchend', onTouchEnd)
+      document.removeEventListener('touchcancel', onTouchEnd)
+    }
+  }, [])
+
+  // ============ Prevent touch-induced viewport scrolling ============
+  // Block touchmove on areas that have no scrollable container, so the
+  // gesture doesn't leak to the layout viewport.
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) return
+
+    const handleTouchMove = (e: TouchEvent) => {
+      let target = e.target as HTMLElement | null
+      while (target && target !== container) {
+        // Allow textarea scrolling only when content overflows
+        if (target.tagName === 'TEXTAREA') {
+          if (target.scrollHeight > target.clientHeight) return
+          target = target.parentElement
+          continue
+        }
+        const style = window.getComputedStyle(target)
+        const oy = style.overflowY
+        if ((oy === 'auto' || oy === 'scroll') && target.scrollHeight > target.clientHeight) {
+          return
+        }
+        target = target.parentElement
+      }
+      e.preventDefault()
+    }
+
+    container.addEventListener('touchmove', handleTouchMove, { passive: false })
+    return () => container.removeEventListener('touchmove', handleTouchMove)
   }, [])
 
   // ============ Render ============
 
   return (
-    <div ref={containerRef} className="fixed inset-x-0 top-0 flex flex-col h-dvh bg-white overflow-hidden">
+    <div ref={containerRef} className="fixed inset-x-0 top-0 flex flex-col h-dvh bg-white overflow-hidden overscroll-none">
       {/* Header */}
       <header className="shrink-0 bg-white border-b border-neutral-200 z-20">
         <div className="flex items-center h-11 px-2.5 gap-1.5">
@@ -361,7 +412,7 @@ export function MobileTaskDetail({ task, onBack, onDeleteTask, isDeleting }: Mob
         <div className="flex-1 flex flex-col min-h-0">
           {/* Scrollable Logs */}
           <div className="relative flex-1 min-h-0">
-            <div ref={scrollRef} className="h-full overflow-y-auto overflow-x-hidden px-3 pt-3 pb-2">
+            <div ref={scrollRef} className="h-full overflow-y-auto overflow-x-hidden overscroll-y-contain px-3 pt-3 pb-2">
             <div ref={contentRef}>
             {/* Task Description */}
             <div className="mb-3 pb-2 border-b border-neutral-100">

@@ -188,7 +188,7 @@ export function MobileChangesView({ workingDir }: { workingDir?: string }) {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto">
+    <div className="flex-1 overflow-y-auto overscroll-y-contain">
       <ChangeGroup title="Uncommitted" entries={uncommitted} type="uncommitted" workingDir={workingDir} defaultOpen={true} />
       <ChangeGroup title="Committed" entries={committed} type="committed" workingDir={workingDir} defaultOpen={false} />
     </div>
