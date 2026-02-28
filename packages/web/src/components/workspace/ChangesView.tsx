@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useCallback } from 'react'
 import { GitGraph, Loader2, FileCode2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useGitChanges, useGitDiff, type GitChangeEntry } from '@/hooks/use-git'
@@ -181,6 +181,28 @@ const DiffViewer: React.FC<{
 export const ChangesView: React.FC<{ workingDir?: string }> = ({ workingDir }) => {
   const { data, isLoading, isError } = useGitChanges(workingDir)
   const [selected, setSelected] = useState<{ path: string; type: DiffType } | null>(null)
+  const [treeWidth, setTreeWidth] = useState(260)
+  const [isDragging, setIsDragging] = useState(false)
+
+  const onDragStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    setIsDragging(true)
+    const startX = e.clientX
+    const startWidth = treeWidth
+
+    const onMouseMove = (ev: MouseEvent) => {
+      const delta = ev.clientX - startX
+      const next = Math.min(480, Math.max(160, startWidth + delta))
+      setTreeWidth(next)
+    }
+    const onMouseUp = () => {
+      setIsDragging(false)
+      document.removeEventListener('mousemove', onMouseMove)
+      document.removeEventListener('mouseup', onMouseUp)
+    }
+    document.addEventListener('mousemove', onMouseMove)
+    document.addEventListener('mouseup', onMouseUp)
+  }, [treeWidth])
 
   const selectedKey = selected ? `${selected.type}:${selected.path}` : null
 
@@ -218,9 +240,9 @@ export const ChangesView: React.FC<{ workingDir?: string }> = ({ workingDir }) =
   const totalChanges = uncommitted.length + committed.length
 
   return (
-    <div className="flex h-full bg-white">
+    <div className="flex h-full bg-white" style={isDragging ? { userSelect: 'none', cursor: 'col-resize' } : undefined}>
       {/* Left: file list */}
-      <div className="w-[260px] border-r border-neutral-200 flex flex-col shrink-0">
+      <div className="border-r border-neutral-200 flex flex-col shrink-0" style={{ width: treeWidth }}>
         {/* Header */}
         <div className="px-3 py-2.5 border-b border-neutral-100 shrink-0">
           <div className="flex items-center gap-2">
@@ -261,6 +283,15 @@ export const ChangesView: React.FC<{ workingDir?: string }> = ({ workingDir }) =
           )}
         </div>
       </div>
+
+      {/* Drag handle */}
+      <div
+        onMouseDown={onDragStart}
+        className={cn(
+          'w-1 shrink-0 cursor-col-resize transition-colors',
+          isDragging ? 'bg-blue-400' : 'bg-transparent hover:bg-blue-300'
+        )}
+      />
 
       {/* Right: diff viewer */}
       <div className="flex-1 flex flex-col min-w-0">
