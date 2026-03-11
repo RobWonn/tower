@@ -565,11 +565,12 @@ export class SessionManager {
   }
 
   /**
-   * Session 启动时检查 Task 是否需要自动回退状态。
+   * Session 启动时自动更新 Task 状态。
    *
-   * 规则：当某个 Session 重新变为 RUNNING 时，如果所属 Task 处于
-   * IN_REVIEW 或 DONE，自动回退到 IN_PROGRESS，表示工作重新进行中。
-   * 注意：COMMIT_MSG session 启动不应触发状态回退。
+   * 规则：
+   * 1. TODO → IN_PROGRESS：首次启动 session 时，任务开始进行
+   * 2. IN_REVIEW/DONE → IN_PROGRESS：重新启动 session 时，任务回退到进行中
+   * 注意：COMMIT_MSG session 启动不应触发状态变更。
    */
   private async checkTaskAutoRevert(sessionId: string): Promise<void> {
     try {
@@ -579,12 +580,17 @@ export class SessionManager {
       });
       if (!session?.workspace?.task) return;
 
-      // COMMIT_MSG session 不触发状态回退
+      // COMMIT_MSG session 不触发状态变更
       if (session.purpose === SessionPurpose.COMMIT_MSG) return;
 
       const task = session.workspace.task;
-      const revertableStatuses: string[] = [TaskStatus.IN_REVIEW, TaskStatus.DONE];
-      if (!revertableStatuses.includes(task.status)) return;
+
+      // 如果任务已经是 IN_PROGRESS，无需更新
+      if (task.status === TaskStatus.IN_PROGRESS) return;
+
+      // TODO、IN_REVIEW、DONE 都应该转为 IN_PROGRESS
+      const shouldUpdate = [TaskStatus.TODO, TaskStatus.IN_REVIEW, TaskStatus.DONE].includes(task.status as TaskStatus);
+      if (!shouldUpdate) return;
 
       await prisma.task.update({
         where: { id: task.id },
@@ -598,7 +604,7 @@ export class SessionManager {
       });
 
       console.log(
-        `[SessionManager] Task ${task.id} auto-reverted from ${task.status} to IN_PROGRESS (session ${sessionId} started)`,
+        `[SessionManager] Task ${task.id} status updated from ${task.status} to IN_PROGRESS (session ${sessionId} started)`,
       );
     } catch (error) {
       console.error(`[SessionManager] checkTaskAutoRevert failed for session ${sessionId}:`, error);

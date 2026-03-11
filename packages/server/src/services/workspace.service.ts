@@ -83,6 +83,7 @@ export class WorkspaceService {
         // 复用 worktree 时也执行 setup 脚本（fire-and-forget）
         this.fireSetupScript(mergedWorkspace.id, taskId, worktreePath, task.project.setupScript);
 
+        // 更新 workspace 状态为 ACTIVE
         const updated = await prisma.workspace.update({
           where: { id: mergedWorkspace.id },
           data: {
@@ -91,19 +92,6 @@ export class WorkspaceService {
           },
           include: { sessions: true, task: { include: { project: true } } },
         });
-
-        // Task 状态回退到 IN_PROGRESS
-        if (task.status !== TaskStatus.IN_PROGRESS && task.status !== TaskStatus.TODO) {
-          await prisma.task.update({
-            where: { id: taskId },
-            data: { status: TaskStatus.IN_PROGRESS },
-          });
-          this.eventBus.emit('task:updated', {
-            taskId,
-            projectId: task.projectId,
-            status: TaskStatus.IN_PROGRESS,
-          });
-        }
 
         return updated;
       }
@@ -136,19 +124,6 @@ export class WorkspaceService {
         data: { branchName: branch, worktreePath },
         include: { sessions: true, task: { include: { project: true } } },
       });
-
-      // 将关联 Task 状态改为 IN_PROGRESS（仅当当前为 TODO 时）
-      if (task.status === TaskStatus.TODO) {
-        await prisma.task.update({
-          where: { id: taskId },
-          data: { status: TaskStatus.IN_PROGRESS },
-        });
-        this.eventBus.emit('task:updated', {
-          taskId,
-          projectId: task.projectId,
-          status: TaskStatus.IN_PROGRESS,
-        });
-      }
 
       return updated;
     } catch (err) {
