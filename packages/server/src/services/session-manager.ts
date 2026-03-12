@@ -84,17 +84,33 @@ export class SessionManager {
   }
 
   async start(id: string) {
+    console.log('[SessionManager] 🚀 Starting session:', id);
+
     const session = await prisma.session.findUnique({
       where: { id },
       include: { workspace: true },
     });
-    if (!session) return null;
+    if (!session) {
+      console.log('[SessionManager] ❌ Session not found:', id);
+      return null;
+    }
+
+    console.log('[SessionManager] Session details:', {
+      id: session.id,
+      agentType: session.agentType,
+      variant: session.variant,
+      promptLength: session.prompt.length,
+      promptPreview: session.prompt.substring(0, 200),
+      workingDir: session.workspace.worktreePath,
+    });
 
     const agentType = session.agentType as AgentType;
     const executor = getExecutor(agentType, session.variant ?? 'DEFAULT');
     if (!executor) {
       throw new Error(`Executor not found for agent type: ${session.agentType}`);
     }
+
+    console.log('[SessionManager] ✅ Executor found, spawning process...');
 
     const workingDir = session.workspace.worktreePath;
     const spawnResult = await executor.spawn({
@@ -121,11 +137,18 @@ export class SessionManager {
   }
 
   async sendMessage(id: string, message: string) {
+    console.log('[SessionManager] 📨 Sending message to session:', id);
+    console.log('[SessionManager] Message length:', message.length);
+    console.log('[SessionManager] Message preview:', message.substring(0, 200));
+
     const session = await prisma.session.findUnique({
       where: { id },
       include: { workspace: true },
     });
-    if (!session) return null;
+    if (!session) {
+      console.log('[SessionManager] ❌ Session not found:', id);
+      return null;
+    }
 
     const existing = this.pipelines.get(id);
     if (existing) {

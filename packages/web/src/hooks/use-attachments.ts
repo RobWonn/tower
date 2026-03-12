@@ -102,8 +102,9 @@ export function useAttachments() {
         const att = f.attachment!
         const isImage = att.mimeType.startsWith('image/')
         const prefix = isImage ? '!' : ''
-        // 使用 HTTP URL 而不是磁盘路径，确保浏览器能正常访问
-        return `${prefix}[${att.originalName}](${API_BASE_URL}${att.url})`
+        // 使用磁盘路径传给 Agent，Agent 会读取文件并转换为 base64
+        // 前端显示时，LogStream 的 attachmentUrlTransform 会自动转换为 HTTP URL
+        return `${prefix}[${att.originalName}](${att.storagePath})`
       })
       .join('\n')
   }, [])

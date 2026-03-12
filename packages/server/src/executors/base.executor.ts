@@ -249,6 +249,8 @@ export abstract class BaseExecutor implements StandardCodingAgentExecutor {
   /**
    * 通过 stdin 发送数据启动进程
    * 用于需要通过 stdin 传递结构化数据的场景（如图片）
+   *
+   * 注意：这里使用临时文件方式，因为 PTY 不适合传递大量结构化数据
    */
   protected async spawnWithStdin(
     config: ExecutorSpawnConfig,
@@ -263,15 +265,23 @@ export abstract class BaseExecutor implements StandardCodingAgentExecutor {
     // 不添加 prompt 到参数列表，因为会通过 stdin 发送
     const fullArgs = [...args];
 
-    // 使用 echo 通过管道传递 stdin 数据
-    // 这样可以正确地将数据传递给 Claude CLI 的 stdin
-    const escapedStdinData = stdinData.replace(/'/g, "'\\''");
-    const shellCommand = `echo '${escapedStdinData}' | ${programPath} ${fullArgs.map(arg => `'${arg.replace(/'/g, "'\\''")}'`).join(' ')}`;
-
-    console.log('[BaseExecutor] Spawning with stdin via pipe');
-    console.log('[BaseExecutor] Command length:', shellCommand.length);
+    console.log('[BaseExecutor] Spawning with stdin (via temp file)');
+    console.log('[BaseExecutor] Program:', programPath);
+    console.log('[BaseExecutor] Args:', fullArgs.join(' '));
     console.log('[BaseExecutor] Stdin data length:', stdinData.length);
     console.log('[BaseExecutor] Stdin data preview:', stdinData.substring(0, 500));
+
+    // 使用临时文件传递 stdin 数据，避免命令行参数长度限制
+    const fs = await import('node:fs/promises');
+    const os = await import('node:os');
+    const path = await import('node:path');
+
+    const tmpFile = path.join(os.tmpdir(), `agent-tower-stdin-${Date.now()}.json`);
+    await fs.writeFile(tmpFile, stdinData, 'utf-8');
+    console.log('[BaseExecutor] Wrote stdin data to temp file:', tmpFile);
+
+    // 使用 shell 重定向从临时文件读取
+    const shellCommand = `cat "${tmpFile}" | ${programPath} ${fullArgs.map(arg => `'${arg.replace(/'/g, "'\\''")}'`).join(' ')}; rm -f "${tmpFile}"`;
 
     const shell = pty.spawn('/bin/bash', ['-c', shellCommand], {
       name: 'xterm-256color',
@@ -280,6 +290,8 @@ export abstract class BaseExecutor implements StandardCodingAgentExecutor {
       cwd: config.workingDir,
       env: env.getFullEnv(),
     });
+
+    console.log('[BaseExecutor] Process spawned with PID:', shell.pid);
 
     // 添加调试输出监听
     let outputBuffer = '';
