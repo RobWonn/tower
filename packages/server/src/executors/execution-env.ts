@@ -107,12 +107,16 @@ export class ExecutionEnv {
 
   /**
    * 获取完整的环境变量（包含 process.env）
+   * 过滤掉会阻止 Agent CLI 嵌套启动的环境变量
    */
   getFullEnv(): Record<string, string> {
-    return {
+    const env = {
       ...process.env as Record<string, string>,
       ...this.toObject(),
     };
+    // Claude Code 检测 CLAUDECODE 环境变量来阻止嵌套启动
+    delete env.CLAUDECODE;
+    return env;
   }
 
   /**

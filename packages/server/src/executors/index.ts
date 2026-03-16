@@ -9,6 +9,7 @@ import { BaseExecutor, AvailabilityInfo } from './base.executor.js';
 import { ClaudeCodeExecutor, type ClaudeCodeConfig } from './claude-code.executor.js';
 import { GeminiCliExecutor, type GeminiCliConfig } from './gemini-cli.executor.js';
 import { CursorAgentExecutor, type CursorAgentConfig } from './cursor-agent.executor.js';
+import { CodexExecutor, type CodexConfig } from './codex.executor.js';
 import { getVariantConfig, type VariantConfig } from './profiles.js';
 
 // ─── Executor Factory ────────────────────────────────────────────
@@ -24,6 +25,8 @@ function createExecutor(agentType: AgentType, config: VariantConfig = {}): BaseE
       return new GeminiCliExecutor(config as GeminiCliConfig);
     case AgentType.CURSOR_AGENT:
       return new CursorAgentExecutor(config as CursorAgentConfig);
+    case AgentType.CODEX:
+      return new CodexExecutor(config as CodexConfig);
     default:
       throw new Error(`Unknown agent type: ${agentType}`);
   }
@@ -107,6 +110,7 @@ export { BaseExecutor, CancellationToken } from './base.executor.js';
 export { ClaudeCodeExecutor, PermissionMode } from './claude-code.executor.js';
 export { GeminiCliExecutor } from './gemini-cli.executor.js';
 export { CursorAgentExecutor } from './cursor-agent.executor.js';
+export { CodexExecutor } from './codex.executor.js';
 export { CommandBuilder } from './command-builder.js';
 export { ExecutionEnv } from './execution-env.js';
 
@@ -127,6 +131,7 @@ export type { AvailabilityInfo, SpawnedChild, ExecutorSpawnConfig, AgentCapabili
 export type { ClaudeCodeConfig } from './claude-code.executor.js';
 export type { GeminiCliConfig } from './gemini-cli.executor.js';
 export type { CursorAgentConfig } from './cursor-agent.executor.js';
+export type { CodexConfig } from './codex.executor.js';
 export type { CmdOverrides, CommandParts } from './command-builder.js';
 export type { RepoContext } from './execution-env.js';
 export type { ExecutorProfiles, VariantConfig, AgentVariants } from './profiles.js';

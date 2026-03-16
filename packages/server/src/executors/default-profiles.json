@@ -24,6 +24,11 @@
         "force": true,
         "model": "auto"
       }
+    },
+    "CODEX": {
+      "DEFAULT": {
+        "fullAuto": true
+      }
     }
   }
 }

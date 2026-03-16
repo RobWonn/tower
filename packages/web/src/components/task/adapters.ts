@@ -68,6 +68,8 @@ export function formatAgentType(agentType: AgentType): string {
       return 'Gemini CLI'
     case AgentType.CURSOR_AGENT:
       return 'Cursor Agent'
+    case AgentType.CODEX:
+      return 'Codex'
   }
 }
 

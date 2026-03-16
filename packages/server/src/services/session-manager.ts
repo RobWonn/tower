@@ -5,6 +5,7 @@ import {
   sessionMsgStoreManager,
   createClaudeCodeParser,
   createCursorAgentParser,
+  createCodexParser,
   createUserMessage,
   addNormalizedEntry,
 } from '../output/index.js';
@@ -352,6 +353,9 @@ export class SessionManager {
     }
     if (agentType === AgentType.CURSOR_AGENT) {
       return createCursorAgentParser(msgStore, workingDir);
+    }
+    if (agentType === AgentType.CODEX) {
+      return createCodexParser(msgStore);
     }
     return null;
   }

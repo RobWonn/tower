@@ -273,15 +273,17 @@ const ToolGroup = memo(({ label, logs }: { label: string; logs: LogEntry[] }) =>
           <ChevronRight size={11} strokeWidth={2} className="text-neutral-400" />
         </span>
         <span className="font-medium text-neutral-500 shrink-0">{label}</span>
-        <span className="inline-flex items-center justify-center px-1.5 py-0.5 rounded-full bg-neutral-100 text-neutral-400 text-[10px] font-medium leading-none shrink-0 tabular-nums">
-          {logs.length}
+        <span className="shrink-0 inline-flex items-center gap-1">
+          <span className="inline-flex items-center justify-center px-1.5 py-0.5 rounded-full bg-neutral-100 text-neutral-400 text-[10px] font-medium leading-none tabular-nums">
+            {logs.length}
+          </span>
+          {successCount > 0 && (
+            <span className="text-emerald-400 text-[10px]">{successCount}✓</span>
+          )}
+          {failCount > 0 && (
+            <span className="text-red-400 text-[10px]">{failCount}✗</span>
+          )}
         </span>
-        {successCount > 0 && (
-          <span className="text-emerald-400 text-[10px]">{successCount}✓</span>
-        )}
-        {failCount > 0 && (
-          <span className="text-red-400 text-[10px]">{failCount}✗</span>
-        )}
         {!isOpen && (
           <span className="truncate text-neutral-300 font-mono">
             {summaries.slice(0, 3).join(', ')}{logs.length > 3 ? ' …' : ''}

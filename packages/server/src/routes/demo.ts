@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { IPty } from 'node-pty';
 import { AgentType } from '../types/index.js';
 import { getExecutor, getAllExecutorsAvailability, ExecutionEnv } from '../executors/index.js';
-import { sessionMsgStoreManager, createClaudeCodeParser, createCursorAgentParser } from '../output/index.js';
+import { sessionMsgStoreManager, createClaudeCodeParser, createCursorAgentParser, createCodexParser } from '../output/index.js';
 
 // Debug 日志开关
 const DEBUG_DEMO = process.env.DEBUG_DEMO === 'true';
@@ -63,6 +63,8 @@ export async function demoRoutes(app: FastifyInstance) {
         parser = createClaudeCodeParser(msgStore);
       } else if (body.agentType === AgentType.CURSOR_AGENT) {
         parser = createCursorAgentParser(msgStore, workingDir);
+      } else if (body.agentType === AgentType.CODEX) {
+        parser = createCodexParser(msgStore);
       }
 
       // 将 PTY 输出转发到 MsgStore 和解析器

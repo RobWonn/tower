@@ -24,3 +24,4 @@ export {
 // 解析器导出
 export { ClaudeCodeParser, createClaudeCodeParser } from './claude-code-parser.js'
 export { CursorAgentParser, createCursorAgentParser } from './cursor-agent-parser.js'
+export { CodexParser, createCodexParser } from './codex-parser.js'
