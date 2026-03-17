@@ -3,6 +3,7 @@ import { useProviders, useCreateProvider, useUpdateProvider, useDeleteProvider }
 import type { CreateProviderInput, UpdateProviderInput } from '@/hooks/use-providers'
 import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/modal'
+import { Select } from '@/components/ui/select'
 import { Plus, Pencil, Trash2, CheckCircle2, XCircle } from 'lucide-react'
 import { AgentType } from '@agent-tower/shared'
 
@@ -120,17 +121,15 @@ function ProviderFormModal({
         {!initialData && (
           <div>
             <label className="block text-xs font-medium text-neutral-700 mb-1">Agent 类型</label>
-            <select
+            <Select
               value={formData.agentType}
-              onChange={e => setFormData(prev => ({ ...prev, agentType: e.target.value as AgentType }))}
-              className="w-full px-3 py-2 text-sm border border-neutral-200 rounded focus:outline-none focus:ring-1 focus:ring-neutral-900"
-            >
-              {Object.values(AgentType).map(type => (
-                <option key={type} value={type}>
-                  {AGENT_TYPE_LABELS[type] ?? type}
-                </option>
-              ))}
-            </select>
+              onChange={value => setFormData(prev => ({ ...prev, agentType: value as AgentType }))}
+              options={Object.values(AgentType).map(type => ({
+                value: type,
+                label: AGENT_TYPE_LABELS[type] ?? type,
+              }))}
+              placeholder="选择 Agent 类型"
+            />
           </div>
         )}
 
