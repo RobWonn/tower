@@ -1,4 +1,5 @@
 import { Gauge } from 'lucide-react'
+import { Tooltip } from '@/components/ui/tooltip'
 import type { TokenUsageInfo } from '../../hooks/useTokenUsage'
 
 interface TokenUsageIndicatorProps {
@@ -25,26 +26,22 @@ export function TokenUsageIndicator({ usage }: TokenUsageIndicatorProps) {
   const percentage = maxCtx ? Math.min(Math.round(ratio * 100), 100) : null
   const colorClass = maxCtx ? getUsageColor(ratio) : 'text-neutral-400'
 
-  return (
-    <div className="group relative flex items-center gap-1.5 px-2 py-1.5 text-xs rounded-lg hover:bg-neutral-100 transition-colors cursor-default select-none">
-      <Gauge size={14} className={colorClass} />
-      <span className={`tabular-nums ${colorClass}`}>
-        {formatNumber(usage.totalTokens)}
-        {percentage !== null && (
-          <span className="text-neutral-300 ml-0.5">/ {percentage}%</span>
-        )}
-      </span>
+  const tooltipContent = maxCtx
+    ? <span>上下文: {formatNumber(usage.totalTokens)} / {formatNumber(maxCtx)} tokens</span>
+    : <span>已使用: {formatNumber(usage.totalTokens)} tokens</span>
 
-      {/* Tooltip */}
-      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-neutral-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50 shadow-lg">
-        {maxCtx ? (
-          <span>上下文: {formatNumber(usage.totalTokens)} / {formatNumber(maxCtx)} tokens</span>
-        ) : (
-          <span>已使用: {formatNumber(usage.totalTokens)} tokens</span>
-        )}
-        <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-neutral-900" />
+  return (
+    <Tooltip content={tooltipContent}>
+      <div className="flex items-center gap-1.5 px-2 py-1.5 text-xs rounded-lg hover:bg-neutral-100 transition-colors cursor-default select-none">
+        <Gauge size={14} className={colorClass} />
+        <span className={`tabular-nums ${colorClass}`}>
+          {formatNumber(usage.totalTokens)}
+          {percentage !== null && (
+            <span className="text-neutral-300 ml-0.5">/ {percentage}%</span>
+          )}
+        </span>
       </div>
-    </div>
+    </Tooltip>
   )
 }
 

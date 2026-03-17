@@ -10,6 +10,8 @@ import { TokenUsageIndicator } from '@/components/agent'
 import { IconRunning, IconReview, IconPending, IconDone, IconCancelled } from '@/components/agent'
 import { Paperclip, ArrowUp, ArrowDown, PanelRightClose, PanelRightOpen, Play, Square, Code2, Trash2, MoreVertical, GitFork, Cpu } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Tooltip } from '@/components/ui/tooltip'
+import { truncateMiddle } from '@/lib/utils'
 import { WorkspacePanel } from '@/components/workspace/WorkspacePanel'
 import { useWorkspaces, useOpenInEditor, useGitStatus } from '@/hooks/use-workspaces'
 import { useNormalizedLogs } from '@/lib/socket/hooks/useNormalizedLogs'
@@ -879,10 +881,12 @@ export function TaskDetail({ task, onDeleteTask, isDeleting, onTaskStatusChange 
 
                 <div className="flex items-center gap-2">
                   {activeProviderName && (
-                    <span className="flex items-center gap-1 text-xs text-neutral-400 px-2 py-1.5 max-w-[120px] select-none">
-                      <Cpu size={14} className="shrink-0" />
-                      <span className="truncate">{activeProviderName}</span>
-                    </span>
+                    <Tooltip content={activeProviderName}>
+                      <span className="flex items-center gap-1 text-xs text-neutral-400 px-2 py-1.5 select-none cursor-default">
+                        <Cpu size={14} className="shrink-0" />
+                        <span>{truncateMiddle(activeProviderName, 12)}</span>
+                      </span>
+                    </Tooltip>
                   )}
                   <TokenUsageIndicator usage={tokenUsage} />
                   {isSessionActive && !input.trim() && !hasAttachments ? (
