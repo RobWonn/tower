@@ -36,8 +36,17 @@ interface ProviderFormData {
   agentType: AgentType
   env: Array<{ key: string; value: string }>
   config: string // JSON string
+  appendPrompt: string
   isDefault: boolean
 }
+
+const QUICK_PROMPTS = [
+  { label: 'think', value: '\n\nthink' },
+  { label: 'think hard', value: '\n\nthink hard' },
+  { label: 'think harder', value: '\n\nthink harder' },
+  { label: 'megathink', value: '\n\nmegathink' },
+  { label: 'ultrathink', value: '\n\nultrathink' },
+]
 
 function ProviderFormModal({
   isOpen,
@@ -56,6 +65,7 @@ function ProviderFormModal({
       agentType: AgentType.CLAUDE_CODE,
       env: [{ key: '', value: '' }],
       config: '{}',
+      appendPrompt: '',
       isDefault: false,
     }
   )
@@ -80,6 +90,13 @@ function ProviderFormModal({
     try {
       const config = JSON.parse(formData.config)
       setConfigError('')
+
+      // 将 appendPrompt 合并到 config 中
+      if (formData.appendPrompt.trim()) {
+        config.appendPrompt = formData.appendPrompt
+      } else {
+        delete config.appendPrompt
+      }
 
       const env: Record<string, string> = {}
       formData.env.forEach(({ key, value }) => {
@@ -193,6 +210,44 @@ function ProviderFormModal({
           </p>
         </div>
 
+        {/* Append Prompt */}
+        <div>
+          <label className="block text-xs font-medium text-neutral-700 mb-1">追加提示词</label>
+          <textarea
+            value={formData.appendPrompt}
+            onChange={e => setFormData(prev => ({ ...prev, appendPrompt: e.target.value }))}
+            rows={3}
+            className="w-full px-3 py-2 text-sm border border-neutral-200 rounded focus:outline-none focus:ring-1 focus:ring-neutral-900"
+            placeholder="附加到每次 prompt 末尾的内容，例如思考等级触发词"
+          />
+          <div className="flex flex-wrap gap-1.5 mt-1.5">
+            {QUICK_PROMPTS.map(qp => (
+              <button
+                key={qp.label}
+                type="button"
+                onClick={() =>
+                  setFormData(prev => ({
+                    ...prev,
+                    appendPrompt: prev.appendPrompt.includes(qp.value.trim())
+                      ? prev.appendPrompt
+                      : qp.value,
+                  }))
+                }
+                className={`px-2 py-0.5 text-xs rounded-full border transition-colors ${
+                  formData.appendPrompt.trim() === qp.value.trim()
+                    ? 'border-neutral-900 bg-neutral-900 text-white'
+                    : 'border-neutral-300 text-neutral-600 hover:border-neutral-400 hover:text-neutral-900'
+                }`}
+              >
+                {qp.label}
+              </button>
+            ))}
+          </div>
+          <p className="mt-1 text-xs text-neutral-500">
+            点击标签快速设置思考等级，或自由输入任意追加内容
+          </p>
+        </div>
+
         {/* Is Default */}
         <div className="flex items-center gap-2">
           <input
@@ -255,13 +310,16 @@ export function ProviderSettingsPage() {
       key,
       value: value as string,
     }))
+    // 从 config 中分离 appendPrompt
+    const { appendPrompt, ...restConfig } = provider.provider.config as Record<string, unknown>
     setEditModal({
       id: provider.provider.id,
       data: {
         name: provider.provider.name,
         agentType: provider.provider.agentType as AgentType,
         env: envArray.length > 0 ? envArray : [{ key: '', value: '' }],
-        config: JSON.stringify(provider.provider.config, null, 2),
+        config: JSON.stringify(restConfig, null, 2),
+        appendPrompt: (appendPrompt as string) ?? '',
         isDefault: provider.provider.isDefault,
       },
     })
@@ -327,14 +385,27 @@ export function ProviderSettingsPage() {
                         {Object.keys(provider.env).join(', ')}
                       </div>
                     )}
-                    {Object.keys(provider.config).length > 0 && (
-                      <div className="text-xs text-neutral-600">
-                        <span className="font-medium">运行参数:</span>{' '}
-                        {Object.entries(provider.config)
-                          .map(([k, v]) => `${k}: ${JSON.stringify(v)}`)
-                          .join(', ')}
-                      </div>
-                    )}
+                    {(() => {
+                      const cfg = provider.config as Record<string, unknown>
+                      const configEntries = Object.entries(cfg).filter(([k]) => k !== 'appendPrompt')
+                      const appendPrompt = cfg.appendPrompt as string | undefined
+                      return (
+                        <>
+                          {configEntries.length > 0 && (
+                            <div className="text-xs text-neutral-600">
+                              <span className="font-medium">运行参数:</span>{' '}
+                              {configEntries.map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(', ')}
+                            </div>
+                          )}
+                          {appendPrompt && (
+                            <div className="text-xs text-neutral-600">
+                              <span className="font-medium">追加提示词:</span>{' '}
+                              <span className="text-neutral-500">{appendPrompt.trim()}</span>
+                            </div>
+                          )}
+                        </>
+                      )
+                    })()}
                   </div>
                   <div className="flex items-center gap-1 ml-4">
                     <button

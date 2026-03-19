@@ -163,6 +163,11 @@ export class ClaudeCodeExecutor extends BaseExecutor {
       '--disallowedTools=AskUserQuestion',
     ]);
 
+    // 追加系统提示
+    if (this.config.appendPrompt) {
+      builder.extendParams(['--append-system-prompt', this.config.appendPrompt]);
+    }
+
     // 应用覆盖
     return applyOverrides(builder, this.cmdOverrides);
   }
@@ -206,6 +211,11 @@ export class ClaudeCodeExecutor extends BaseExecutor {
       '--replay-user-messages',
       '--disallowedTools=AskUserQuestion',
     ]);
+
+    // 追加系统提示
+    if (this.config.appendPrompt) {
+      builder.extendParams(['--append-system-prompt', this.config.appendPrompt]);
+    }
 
     // 应用覆盖
     return applyOverrides(builder, this.cmdOverrides);
@@ -285,11 +295,9 @@ export class ClaudeCodeExecutor extends BaseExecutor {
 
   /**
    * 组合 prompt
+   * 注意: appendPrompt 已通过 --append-system-prompt CLI 参数传入，不再拼接到用户 prompt
    */
   private combinePrompt(prompt: string): string {
-    if (this.config.appendPrompt) {
-      return `${prompt}${this.config.appendPrompt}`;
-    }
     return prompt;
   }
 }
