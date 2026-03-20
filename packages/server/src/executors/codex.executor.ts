@@ -148,7 +148,7 @@ export class CodexExecutor extends BaseExecutor {
     const commandBuilder = this.buildCommandBuilder();
 
     // Codex 使用 exec 子命令进行非交互式执行
-    commandBuilder.extendParams(['exec', '--json', '--ephemeral', '--skip-git-repo-check']);
+    commandBuilder.extendParams(['exec', '--json', '--skip-git-repo-check']);
 
     const commandParts = commandBuilder.buildInitial();
 
