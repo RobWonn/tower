@@ -11,8 +11,13 @@ import { AgentType } from '../types/index.js';
 import { ExecutionEnv } from './execution-env.js';
 import { CommandBuilder, CommandParts, CmdOverrides, resolveCommandParts } from './command-builder.js';
 import { stripAnsiSequences } from '../output/utils/ansi.js';
+import {
+  buildPtyCommand,
+  buildPtyCommandWithStdin,
+  getPtyLogFilePath,
+} from '../utils/process-launch.js';
 
-const PTY_LOG_FILE = '/tmp/agent-tower-pty.log';
+const PTY_LOG_FILE = getPtyLogFilePath();
 function ptyLog(pid: number, msg: string): void {
   const line = `[${new Date().toISOString()}][pid=${pid}] ${msg}\n`;
   process.stdout.write(line);
@@ -226,13 +231,7 @@ export abstract class BaseExecutor implements StandardCodingAgentExecutor {
 
     // 添加 prompt 到参数列表
     const fullArgs = [...args, config.prompt];
-
-    // 构建完整的 shell 命令，确保正确处理 Node.js 脚本
-    // node-pty 直接 spawn Node.js 脚本会失败 (posix_spawnp failed)
-    const shellArgs = [programPath, ...fullArgs].map(arg =>
-      // 转义单引号
-      `'${arg.replace(/'/g, "'\\''")}'`
-    ).join(' ');
+    const invocation = buildPtyCommand(programPath, fullArgs);
 
     const fullEnv = env.getFullEnv();
     ptyLog(0, `Spawning: ${programPath} ${fullArgs.slice(0, -1).join(' ')} ... <prompt>`);
@@ -240,7 +239,7 @@ export abstract class BaseExecutor implements StandardCodingAgentExecutor {
     ptyLog(0, `ENV ANTHROPIC_API_KEY=${fullEnv.ANTHROPIC_API_KEY ? fullEnv.ANTHROPIC_API_KEY.slice(0, 12) + '...' : '(not set)'}`);
     ptyLog(0, `ENV ANTHROPIC_AUTH_TOKEN=${fullEnv.ANTHROPIC_AUTH_TOKEN ? fullEnv.ANTHROPIC_AUTH_TOKEN.slice(0, 12) + '...' : '(not set)'}`);
 
-    const shell = pty.spawn('/bin/bash', ['-c', shellArgs], {
+    const shell = pty.spawn(invocation.command, invocation.args, {
       name: 'xterm-256color',
       cols: 120,
       rows: 30,
@@ -250,7 +249,7 @@ export abstract class BaseExecutor implements StandardCodingAgentExecutor {
 
     ptyLog(shell.pid, `Process spawned`);
 
-    // 收集并实时记录 PTY 输出（写入 /tmp/agent-tower-pty.log 方便诊断）
+    // 收集并实时记录 PTY 输出（写入系统临时目录日志方便诊断）
     let outputBuffer = '';
     const offData = shell.onData((data) => {
       if (outputBuffer.length < 8000) {
@@ -319,11 +318,9 @@ export abstract class BaseExecutor implements StandardCodingAgentExecutor {
     const tmpFile = path.join(os.tmpdir(), `agent-tower-stdin-${Date.now()}.json`);
     await fs.writeFile(tmpFile, stdinData, 'utf-8');
     console.log('[BaseExecutor] Wrote stdin data to temp file:', tmpFile);
+    const invocation = buildPtyCommandWithStdin(programPath, fullArgs, tmpFile);
 
-    // 使用 shell 重定向从临时文件读取
-    const shellCommand = `cat "${tmpFile}" | ${programPath} ${fullArgs.map(arg => `'${arg.replace(/'/g, "'\\''")}'`).join(' ')}; rm -f "${tmpFile}"`;
-
-    const shell = pty.spawn('/bin/bash', ['-c', shellCommand], {
+    const shell = pty.spawn(invocation.command, invocation.args, {
       name: 'xterm-256color',
       cols: 120,
       rows: 30,

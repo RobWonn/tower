@@ -1,4 +1,5 @@
 import pkg from '@prisma/client';
+import { normalizeCommandLookupOutput } from './process-launch.js';
 const { PrismaClient } = pkg;
 
 export const prisma = new PrismaClient();
@@ -20,8 +21,7 @@ export async function which(command: string): Promise<string | null> {
   try {
     const whichCmd = process.platform === 'win32' ? 'where' : 'which';
     const { stdout } = await execAsync(`${whichCmd} ${command}`);
-    const path = stdout.trim().split('\n')[0]; // 取第一个结果
-    return path || null;
+    return normalizeCommandLookupOutput(stdout);
   } catch {
     return null;
   }

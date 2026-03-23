@@ -206,6 +206,7 @@ export async function workspaceRoutes(app: FastifyInstance) {
       const command = resolveEditorCommand(body.editorType);
       spawn(command, [workspace.worktreePath], {
         detached: true,
+        shell: process.platform === 'win32',
         stdio: 'ignore',
       }).unref();
 

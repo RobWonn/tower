@@ -40,7 +40,8 @@
       "agentType": "CODEX",
       "env": {},
       "config": {
-        "fullAuto": true
+        "sandbox": "workspace-write",
+        "approvalPolicy": "on-request"
       },
       "isDefault": true,
       "builtIn": true

@@ -45,6 +45,18 @@ const APPEND_PROMPT_FIELD: ConfigFieldMeta = {
   placeholder: '追加到每次 prompt 末尾的文本',
 }
 
+const CODEX_SANDBOX_OPTIONS = [
+  { value: 'read-only', label: '只读' },
+  { value: 'workspace-write', label: '工作区可写' },
+  { value: 'danger-full-access', label: '完全开放' },
+]
+
+const CODEX_APPROVAL_OPTIONS = [
+  { value: 'untrusted', label: '仅不受信命令需审批' },
+  { value: 'on-request', label: '按需审批' },
+  { value: 'never', label: '从不审批' },
+]
+
 const AGENT_CONFIG_FIELDS: Record<string, ConfigFieldMeta[]> = {
   [AgentType.CLAUDE_CODE]: [
     { key: 'dangerouslySkipPermissions', label: '跳过权限确认', type: 'switch' },
@@ -72,11 +84,41 @@ const AGENT_CONFIG_FIELDS: Record<string, ConfigFieldMeta[]> = {
     APPEND_PROMPT_FIELD,
   ],
   [AgentType.CODEX]: [
-    { key: 'fullAuto', label: '全自动模式', type: 'switch' },
+    { key: 'sandbox', label: '执行沙盒', type: 'select', options: CODEX_SANDBOX_OPTIONS },
+    { key: 'approvalPolicy', label: '命令审批', type: 'select', options: CODEX_APPROVAL_OPTIONS },
     { key: 'model', label: '模型', type: 'input', placeholder: 'o3' },
     { key: 'profile', label: 'Profile', type: 'input', placeholder: '~/.codex/config.toml 中的 profile 名称' },
     APPEND_PROMPT_FIELD,
   ],
+}
+
+function getDefaultConfigForAgentType(agentType: AgentType): Record<string, unknown> {
+  if (agentType === AgentType.CODEX) {
+    return {
+      sandbox: 'workspace-write',
+      approvalPolicy: 'on-request',
+    }
+  }
+  return {}
+}
+
+function normalizeProviderConfig(
+  agentType: AgentType | string,
+  config: Record<string, unknown>
+): Record<string, unknown> {
+  const next = { ...config }
+
+  if (agentType === AgentType.CODEX && next.fullAuto === true) {
+    if (typeof next.sandbox !== 'string' || !next.sandbox) {
+      next.sandbox = 'workspace-write'
+    }
+    if (typeof next.approvalPolicy !== 'string' || !next.approvalPolicy) {
+      next.approvalPolicy = 'on-request'
+    }
+  }
+
+  delete next.fullAuto
+  return next
 }
 
 const CLAUDE_CODE_SETTINGS_TEMPLATE = JSON.stringify(
@@ -145,9 +187,20 @@ const CONFIG_FIELD_LABELS: Record<string, string> = Object.values(AGENT_CONFIG_F
     return acc
   }, {})
 
-function formatConfigValue(value: unknown): string {
+const CONFIG_FIELD_OPTION_LABELS: Record<string, Record<string, string>> = Object.values(AGENT_CONFIG_FIELDS)
+  .flat()
+  .reduce<Record<string, Record<string, string>>>((acc, field) => {
+    if (field.options) {
+      acc[field.key] = Object.fromEntries(field.options.map(option => [option.value, option.label]))
+    }
+    return acc
+  }, {})
+
+function formatConfigValue(key: string, value: unknown): string {
   if (typeof value === 'boolean') return value ? '是' : '否'
-  if (typeof value === 'string' && value) return value
+  if (typeof value === 'string' && value) {
+    return CONFIG_FIELD_OPTION_LABELS[key]?.[value] ?? value
+  }
   return String(value)
 }
 
@@ -328,7 +381,7 @@ function ProviderFormModal({
     initialData ?? {
       name: '',
       agentType: AgentType.CLAUDE_CODE,
-      config: {},
+      config: getDefaultConfigForAgentType(AgentType.CLAUDE_CODE),
       settings: '',
       env: [],
       isDefault: false,
@@ -351,7 +404,7 @@ function ProviderFormModal({
     setFormData(prev => ({
       ...prev,
       agentType: type,
-      config: {},
+      config: getDefaultConfigForAgentType(type),
       settings: getSettingsTemplate(type),
     }))
   }
@@ -360,8 +413,9 @@ function ProviderFormModal({
     setSettingsError('')
 
     // 清理 config 中值为 undefined/空字符串 的字段，保留 false（用户显式关闭开关）
+    const normalizedConfig = normalizeProviderConfig(formData.agentType, formData.config)
     const cleanConfig: Record<string, unknown> = {}
-    for (const [k, v] of Object.entries(formData.config)) {
+    for (const [k, v] of Object.entries(normalizedConfig)) {
       if (v !== undefined && v !== '') {
         cleanConfig[k] = v
       }
@@ -534,6 +588,7 @@ function ProviderFormModal({
                   直接填写 Codex <code className="bg-neutral-100 px-1 rounded">config.toml</code> 格式的配置片段，
                   通过 <code className="bg-neutral-100 px-1 rounded">-c</code> 参数注入。
                   不会修改你的 <code className="bg-neutral-100 px-1 rounded">~/.codex/config.toml</code> 文件。
+                  如与上方“执行沙盒”或“命令审批”重复，以上方运行配置为准。
                 </>
               ) : (
                 <>
@@ -860,7 +915,7 @@ export function ProviderSettingsPage() {
       data: {
         name: p.name,
         agentType: p.agentType as AgentType,
-        config: { ...p.config },
+        config: normalizeProviderConfig(p.agentType as AgentType, p.config),
         settings: p.settings ?? '',
         env: envEntries,
         isDefault: p.isDefault,
@@ -916,8 +971,9 @@ export function ProviderSettingsPage() {
           {providers.map(item => {
             const provider = item.provider
             const availability = item.availability
+            const normalizedConfig = normalizeProviderConfig(provider.agentType as AgentType, provider.config)
             // 过滤掉内部字段 cmd（由 executor 桥接注入），不在列表展示
-            const configEntries = Object.entries(provider.config).filter(
+            const configEntries = Object.entries(normalizedConfig).filter(
               ([k]) => k !== 'cmd'
             )
             return (
@@ -949,7 +1005,7 @@ export function ProviderSettingsPage() {
                         {configEntries.map(([k, v]) => (
                           <span key={k} className="inline-flex items-center mr-3">
                             <span className="font-medium">{CONFIG_FIELD_LABELS[k] ?? k}:</span>{' '}
-                            {formatConfigValue(v)}
+                            {formatConfigValue(k, v)}
                           </span>
                         ))}
                       </div>

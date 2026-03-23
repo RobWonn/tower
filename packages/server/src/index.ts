@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import { homedir } from 'os';
 import { buildApp } from './app.js';
 import { getDevPort } from '@agent-tower/shared/dev-port';
+import { getBundledPrismaCommand } from './utils/process-launch.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const monorepoRoot = path.resolve(__dirname, '../../..');
@@ -22,9 +23,9 @@ process.env.AGENT_TOWER_DATA_DIR = dataDir;
 
 // 确保数据库 schema 与当前版本一致
 const schemaPath = path.resolve(__dirname, '../prisma/schema.prisma');
-const prismaBin = path.resolve(__dirname, '../node_modules/.bin/prisma');
+const prisma = getBundledPrismaCommand(__dirname);
 try {
-  execFileSync(prismaBin, ['db', 'push', '--skip-generate', `--schema=${schemaPath}`], {
+  execFileSync(prisma.command, [...prisma.args, 'db', 'push', '--skip-generate', `--schema=${schemaPath}`], {
     stdio: 'pipe',
     env: { ...process.env, AGENT_TOWER_DATABASE_URL: `file:${dbPath}` },
   });

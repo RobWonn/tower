@@ -72,7 +72,7 @@ export interface CodexConfig {
   sandbox?: string;
   /** 审批策略 (untrusted, on-request, never, reject) */
   approvalPolicy?: string;
-  /** 全自动模式 - 相当于 on-request + workspace-write */
+  /** 兼容旧配置：全自动模式，相当于 on-request + workspace-write */
   fullAuto?: boolean;
   /** 启用实时网络搜索 */
   liveSearch?: boolean;

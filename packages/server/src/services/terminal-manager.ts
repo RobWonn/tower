@@ -2,6 +2,7 @@ import * as pty from 'node-pty';
 import type { IPty } from 'node-pty';
 import type { EventBus } from '../core/event-bus.js';
 import { randomUUID } from 'crypto';
+import { getDefaultTerminalShell } from '../utils/process-launch.js';
 
 // ============================================================
 // Constants
@@ -10,7 +11,7 @@ import { randomUUID } from 'crypto';
 const MAX_TERMINALS_PER_SOCKET = 50;
 const TERMINAL_TTL_MS = 30 * 60 * 1000; // 30 minutes idle timeout
 const TTL_CHECK_INTERVAL_MS = 60 * 1000; // check every 60 seconds
-const DEFAULT_SHELL = process.env.SHELL || '/bin/zsh';
+const DEFAULT_TERMINAL_SHELL = getDefaultTerminalShell();
 
 /** agent-tower 内部注入的环境变量，不应泄漏到用户终端 */
 const INTERNAL_ENV_KEYS = ['AGENT_TOWER_DATABASE_URL', 'AGENT_TOWER_DATA_DIR', 'AGENT_TOWER_WEB_DIR'];
@@ -52,7 +53,7 @@ export interface TerminalInfo {
 
 /**
  * Manages standalone interactive shell terminals.
- * Each terminal is a raw PTY (bash/zsh) with no parser or MsgStore.
+ * Each terminal is a raw PTY (zsh/cmd 等系统默认 shell) with no parser or MsgStore.
  * Terminals are owned by the socket that created them.
  */
 export class TerminalManager {
@@ -84,7 +85,7 @@ export class TerminalManager {
     const rows = options.rows ?? 30;
     const cwd = options.cwd || process.cwd();
 
-    const shell = pty.spawn(DEFAULT_SHELL, [], {
+    const shell = pty.spawn(DEFAULT_TERMINAL_SHELL.command, DEFAULT_TERMINAL_SHELL.args, {
       name: 'xterm-256color',
       cols,
       rows,

@@ -15,19 +15,42 @@ import { getProviderById, getDefaultProvider, getAllProviders, type Provider } f
 
 // ─── Executor Factory ────────────────────────────────────────────
 
+function normalizeConfig(agentType: AgentType, config: VariantConfig = {}): VariantConfig {
+  if (agentType !== AgentType.CODEX) {
+    return config;
+  }
+
+  const normalized = { ...config };
+
+  // 兼容旧数据：fullAuto 曾表示 workspace-write + on-request
+  if (normalized.fullAuto === true) {
+    if (typeof normalized.sandbox !== 'string' || !normalized.sandbox) {
+      normalized.sandbox = 'workspace-write';
+    }
+    if (typeof normalized.approvalPolicy !== 'string' || !normalized.approvalPolicy) {
+      normalized.approvalPolicy = 'on-request';
+    }
+  }
+
+  delete normalized.fullAuto;
+  return normalized;
+}
+
 /**
  * 根据 agent 类型和 variant 配置创建 executor 实例
  */
 function createExecutor(agentType: AgentType, config: VariantConfig = {}): BaseExecutor {
+  const normalizedConfig = normalizeConfig(agentType, config);
+
   switch (agentType) {
     case AgentType.CLAUDE_CODE:
-      return new ClaudeCodeExecutor(config as ClaudeCodeConfig);
+      return new ClaudeCodeExecutor(normalizedConfig as ClaudeCodeConfig);
     case AgentType.GEMINI_CLI:
-      return new GeminiCliExecutor(config as GeminiCliConfig);
+      return new GeminiCliExecutor(normalizedConfig as GeminiCliConfig);
     case AgentType.CURSOR_AGENT:
-      return new CursorAgentExecutor(config as CursorAgentConfig);
+      return new CursorAgentExecutor(normalizedConfig as CursorAgentConfig);
     case AgentType.CODEX:
-      return new CodexExecutor(config as CodexConfig);
+      return new CodexExecutor(normalizedConfig as CodexConfig);
     default:
       throw new Error(`Unknown agent type: ${agentType}`);
   }

@@ -27,7 +27,8 @@
     },
     "CODEX": {
       "DEFAULT": {
-        "fullAuto": true
+        "sandbox": "workspace-write",
+        "approvalPolicy": "on-request"
       }
     }
   }

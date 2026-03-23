@@ -12,6 +12,7 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { getBundledPrismaCommand } from './utils/process-launch.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -85,9 +86,9 @@ function printVersion() {
 
 /** 确保数据库 schema 与当前版本一致 */
 function ensureDatabase(dbPath: string, schemaPath: string) {
-  const prismaBin = path.resolve(__dirname, '../node_modules/.bin/prisma');
+  const prisma = getBundledPrismaCommand(__dirname);
   try {
-    execFileSync(prismaBin, ['db', 'push', '--skip-generate', `--schema=${schemaPath}`], {
+    execFileSync(prisma.command, [...prisma.args, 'db', 'push', '--skip-generate', `--schema=${schemaPath}`], {
       stdio: 'pipe',
       env: { ...process.env, AGENT_TOWER_DATABASE_URL: `file:${dbPath}` },
     });
