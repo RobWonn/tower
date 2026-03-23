@@ -1,12 +1,26 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, type ChangeEvent } from 'react'
 import { parse as parseToml } from 'smol-toml'
-import { useProviders, useCreateProvider, useUpdateProvider, useDeleteProvider } from '@/hooks/use-providers'
+import {
+  useProviders,
+  useCreateProvider,
+  useUpdateProvider,
+  useDeleteProvider,
+  useExportProviderBackup,
+  usePreviewProviderImport,
+  useImportProviderBackup,
+} from '@/hooks/use-providers'
 import type { CreateProviderInput, UpdateProviderInput } from '@/hooks/use-providers'
 import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/modal'
 import { Select } from '@/components/ui/select'
-import { Plus, Pencil, Trash2, CheckCircle2, XCircle, ChevronDown } from 'lucide-react'
-import { AgentType } from '@agent-tower/shared'
+import { Plus, Pencil, Trash2, CheckCircle2, XCircle, ChevronDown, Download, Upload } from 'lucide-react'
+import {
+  AgentType,
+  type ProviderBackupFile,
+  type ProviderImportAction,
+  type ProviderImportPreview,
+} from '@agent-tower/shared'
+import { toast } from 'sonner'
 
 const AGENT_TYPE_LABELS: Record<string, string> = {
   CLAUDE_CODE: 'Claude Code',
@@ -135,6 +149,47 @@ function formatConfigValue(value: unknown): string {
   if (typeof value === 'boolean') return value ? '是' : '否'
   if (typeof value === 'string' && value) return value
   return String(value)
+}
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback
+}
+
+function formatBackupFilename(exportedAt: string): string {
+  const timestamp = exportedAt.replace(/[:.]/g, '-')
+  return `agent-tower-provider-backup-${timestamp}.json`
+}
+
+function downloadJsonFile(filename: string, data: unknown) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+}
+
+function getImportActionMeta(action: ProviderImportAction) {
+  switch (action) {
+    case 'CREATE':
+      return {
+        label: '新增',
+        className: 'text-green-700 bg-green-50',
+      }
+    case 'OVERWRITE':
+      return {
+        label: '覆盖',
+        className: 'text-amber-700 bg-amber-50',
+      }
+    case 'SKIP':
+      return {
+        label: '跳过',
+        className: 'text-neutral-600 bg-neutral-100',
+      }
+  }
 }
 
 // ─── 组件 ───────────────────────────────────────────────────────
@@ -518,13 +573,188 @@ function ProviderFormModal({
   )
 }
 
+function ExportBackupModal({
+  isOpen,
+  onClose,
+  onConfirm,
+  acknowledged,
+  onAcknowledgedChange,
+  isLoading,
+}: {
+  isOpen: boolean
+  onClose: () => void
+  onConfirm: () => void
+  acknowledged: boolean
+  onAcknowledgedChange: (checked: boolean) => void
+  isLoading: boolean
+}) {
+  return (
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title="导出 Provider 备份"
+      className="max-w-xl"
+      action={
+        <>
+          <Button variant="outline" onClick={onClose} disabled={isLoading}>
+            取消
+          </Button>
+          <Button onClick={onConfirm} disabled={!acknowledged || isLoading}>
+            {isLoading ? '导出中...' : '导出备份'}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          导出的备份文件将包含完整的 Provider 配置，包括环境变量、CLI settings 等敏感信息。任何拿到文件的人都可能直接使用这些 Provider。
+        </div>
+        <div className="text-sm text-neutral-600 space-y-2">
+          <p>这个功能用于备份和迁移，不用于分享配置。</p>
+          <p>导出内容只包含用户层配置：自定义 Provider，以及对内置 Provider 的覆盖。</p>
+        </div>
+        <label className="flex items-start gap-3 rounded-lg border border-neutral-200 px-4 py-3 text-sm text-neutral-700">
+          <input
+            type="checkbox"
+            checked={acknowledged}
+            onChange={e => onAcknowledgedChange(e.target.checked)}
+            className="mt-0.5 h-4 w-4"
+          />
+          <span>我已知晓该备份文件包含敏感信息，只会保存在安全位置。</span>
+        </label>
+      </div>
+    </Modal>
+  )
+}
+
+function ImportPreviewModal({
+  isOpen,
+  onClose,
+  preview,
+  backup,
+  onConfirm,
+  isLoading,
+}: {
+  isOpen: boolean
+  onClose: () => void
+  preview: ProviderImportPreview | null
+  backup: ProviderBackupFile | null
+  onConfirm: () => void
+  isLoading: boolean
+}) {
+  if (!preview || !backup) return null
+
+  const importableCount = preview.summary.create + preview.summary.overwrite
+  const sortedItems = [...preview.items].sort((a, b) => {
+    const order: Record<ProviderImportAction, number> = {
+      CREATE: 0,
+      OVERWRITE: 1,
+      SKIP: 2,
+    }
+    return order[a.action] - order[b.action]
+  })
+
+  return (
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title="导入 Provider 备份"
+      className="max-w-3xl"
+      action={
+        <>
+          <Button variant="outline" onClick={onClose} disabled={isLoading}>
+            取消
+          </Button>
+          <Button onClick={onConfirm} disabled={importableCount === 0 || isLoading}>
+            {isLoading ? '导入中...' : `确认导入 ${importableCount} 项`}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-600">
+          <div>导出时间：{new Date(backup.exportedAt).toLocaleString()}</div>
+          <div>模式：完整备份（含敏感信息）</div>
+          <div>文件内 Provider 数量：{backup.providers.length}</div>
+        </div>
+
+        <div className="grid grid-cols-3 gap-3">
+          <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3">
+            <div className="text-xs text-green-700">新增</div>
+            <div className="text-lg font-semibold text-green-900">{preview.summary.create}</div>
+          </div>
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+            <div className="text-xs text-amber-700">覆盖</div>
+            <div className="text-lg font-semibold text-amber-900">{preview.summary.overwrite}</div>
+          </div>
+          <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3">
+            <div className="text-xs text-neutral-500">跳过</div>
+            <div className="text-lg font-semibold text-neutral-900">{preview.summary.skip}</div>
+          </div>
+        </div>
+
+        <div className="max-h-[420px] overflow-y-auto space-y-3 pr-1">
+          {sortedItems.map(item => {
+            const meta = getImportActionMeta(item.action)
+            return (
+              <div key={item.incoming.id} className="rounded-lg border border-neutral-200 px-4 py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h4 className="truncate text-sm font-medium text-neutral-900">{item.incoming.name}</h4>
+                      <span className={`inline-flex rounded px-2 py-0.5 text-xs ${meta.className}`}>
+                        {meta.label}
+                      </span>
+                    </div>
+                    <div className="mt-1 text-xs text-neutral-500">
+                      {AGENT_TYPE_LABELS[item.incoming.agentType] ?? item.incoming.agentType}
+                      {' · '}
+                      <code className="rounded bg-neutral-100 px-1 py-0.5">{item.incoming.id}</code>
+                    </div>
+                  </div>
+                </div>
+
+                {item.action === 'OVERWRITE' && item.existing && (
+                  <p className="mt-2 text-xs text-amber-700">
+                    将覆盖当前已有的 Provider：{item.existing.name}
+                  </p>
+                )}
+                {item.action === 'SKIP' && (
+                  <p className="mt-2 text-xs text-neutral-500">
+                    当前同 ID Provider 配置一致，本次不会重复写入。
+                  </p>
+                )}
+                {item.action === 'CREATE' && (
+                  <p className="mt-2 text-xs text-green-700">
+                    当前不存在同 ID Provider，将直接新增。
+                  </p>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
 export function ProviderSettingsPage() {
   const { data: providersData, isLoading } = useProviders()
   const createProvider = useCreateProvider()
   const updateProvider = useUpdateProvider()
   const deleteProvider = useDeleteProvider()
+  const exportProviderBackup = useExportProviderBackup()
+  const previewProviderImport = usePreviewProviderImport()
+  const importProviderBackup = useImportProviderBackup()
 
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [editModal, setEditModal] = useState<{ id?: string; data?: ProviderFormData } | null>(null)
+  const [isExportBackupOpen, setIsExportBackupOpen] = useState(false)
+  const [exportAcknowledged, setExportAcknowledged] = useState(false)
+  const [importPreviewState, setImportPreviewState] = useState<{
+    backup: ProviderBackupFile
+    preview: ProviderImportPreview
+  } | null>(null)
 
   const handleCreate = (data: CreateProviderInput) => {
     createProvider.mutate(data, {
@@ -540,11 +770,83 @@ export function ProviderSettingsPage() {
 
   const handleDelete = (id: string, name: string, builtIn?: boolean) => {
     if (builtIn) {
-      alert('内置 Provider 不可删除')
+      toast.error('内置 Provider 不可删除')
       return
     }
     if (!confirm(`确定删除 "${name}"？`)) return
     deleteProvider.mutate(id)
+  }
+
+  const closeExportBackup = () => {
+    setIsExportBackupOpen(false)
+    setExportAcknowledged(false)
+  }
+
+  const closeImportPreview = () => {
+    setImportPreviewState(null)
+  }
+
+  const handleExportBackup = () => {
+    exportProviderBackup.mutate(undefined, {
+      onSuccess: backup => {
+        downloadJsonFile(formatBackupFilename(backup.exportedAt), backup)
+        toast.success('Provider 备份已导出')
+        closeExportBackup()
+      },
+      onError: error => {
+        toast.error(getErrorMessage(error, '导出 Provider 备份失败'))
+      },
+    })
+  }
+
+  const handleOpenImportFile = () => {
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+      fileInputRef.current.click()
+    }
+  }
+
+  const handleImportFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+
+    let parsed: ProviderBackupFile
+
+    try {
+      parsed = JSON.parse(await file.text()) as ProviderBackupFile
+    } catch {
+      toast.error('备份文件不是有效的 JSON')
+      return
+    }
+
+    previewProviderImport.mutate(parsed, {
+      onSuccess: preview => {
+        setImportPreviewState({ backup: parsed, preview })
+      },
+      onError: error => {
+        toast.error(getErrorMessage(error, '导入预览失败'))
+      },
+    })
+  }
+
+  const handleConfirmImport = () => {
+    if (!importPreviewState) return
+
+    importProviderBackup.mutate(importPreviewState.backup, {
+      onSuccess: result => {
+        const totalImported = result.summary.create + result.summary.overwrite
+        toast.success(
+          totalImported === 0
+            ? '导入完成，当前配置无需变更'
+            : `导入完成：新增 ${result.summary.create}，覆盖 ${result.summary.overwrite}，跳过 ${result.summary.skip}`
+        )
+        closeImportPreview()
+      },
+      onError: error => {
+        toast.error(getErrorMessage(error, '导入 Provider 备份失败'))
+      },
+    })
   }
 
   const openEdit = (provider: any) => {
@@ -574,6 +876,14 @@ export function ProviderSettingsPage() {
 
   return (
     <div className="px-10 py-6 mx-auto w-full max-w-4xl">
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".json,application/json"
+        className="hidden"
+        onChange={handleImportFileChange}
+      />
+
       <div className="flex items-center justify-between mb-6">
         <div>
           <h2 className="text-lg font-semibold text-neutral-900">Provider 配置</h2>
@@ -581,10 +891,20 @@ export function ProviderSettingsPage() {
             管理 AI Agent 的连接配置和运行参数
           </p>
         </div>
-        <Button onClick={() => setEditModal({})}>
-          <Plus size={14} className="mr-1" />
-          新建 Provider
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={handleOpenImportFile} disabled={previewProviderImport.isPending || importProviderBackup.isPending}>
+            <Upload size={14} />
+            导入备份
+          </Button>
+          <Button variant="outline" onClick={() => setIsExportBackupOpen(true)} disabled={exportProviderBackup.isPending}>
+            <Download size={14} />
+            导出备份
+          </Button>
+          <Button onClick={() => setEditModal({})}>
+            <Plus size={14} className="mr-1" />
+            新建 Provider
+          </Button>
+        </div>
       </div>
 
       {providers.length === 0 ? (
@@ -685,6 +1005,24 @@ export function ProviderSettingsPage() {
           }}
         />
       )}
+
+      <ExportBackupModal
+        isOpen={isExportBackupOpen}
+        onClose={closeExportBackup}
+        onConfirm={handleExportBackup}
+        acknowledged={exportAcknowledged}
+        onAcknowledgedChange={setExportAcknowledged}
+        isLoading={exportProviderBackup.isPending}
+      />
+
+      <ImportPreviewModal
+        isOpen={!!importPreviewState}
+        onClose={closeImportPreview}
+        preview={importPreviewState?.preview ?? null}
+        backup={importPreviewState?.backup ?? null}
+        onConfirm={handleConfirmImport}
+        isLoading={importProviderBackup.isPending}
+      />
     </div>
   )
 }

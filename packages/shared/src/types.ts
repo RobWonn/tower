@@ -62,6 +62,40 @@ export interface Provider {
   builtIn?: boolean;
   createdAt?: string;
 }
+
+export type ProviderBackupMode = 'full'
+
+export interface ProviderBackupFile {
+  version: 1
+  kind: 'provider-backup'
+  exportedAt: string
+  mode: ProviderBackupMode
+  providers: Provider[]
+}
+
+export interface ProviderImportSummary {
+  create: number
+  overwrite: number
+  skip: number
+}
+
+export type ProviderImportAction = 'CREATE' | 'OVERWRITE' | 'SKIP'
+
+export interface ProviderImportPreviewItem {
+  action: ProviderImportAction
+  incoming: Provider
+  existing?: Provider | null
+}
+
+export interface ProviderImportPreview {
+  summary: ProviderImportSummary
+  items: ProviderImportPreviewItem[]
+}
+
+export interface ProviderImportResult {
+  summary: ProviderImportSummary
+  providers: Provider[]
+}
 // ============ 核心实体类型 ============
 
 /** 终端快捷命令 */

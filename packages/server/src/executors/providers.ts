@@ -12,6 +12,12 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
+import type {
+  ProviderBackupFile,
+  ProviderImportPreview,
+  ProviderImportPreviewItem,
+  ProviderImportResult,
+} from '@agent-tower/shared';
 import { AgentType } from '../types/index.js';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
@@ -38,6 +44,8 @@ export interface Provider {
 export interface ProvidersData {
   providers: Provider[];
 }
+
+type PersistedProvider = Omit<Provider, 'builtIn'>;
 
 // ─── Defaults ────────────────────────────────────────────────────
 
@@ -94,6 +102,55 @@ function mergeProviders(builtIns: Provider[], userProviders: Provider[]): Provid
   }
 
   return result;
+}
+
+function toPersistedProvider(provider: Provider): PersistedProvider {
+  const normalized: PersistedProvider = {
+    id: provider.id,
+    name: provider.name,
+    agentType: provider.agentType,
+    env: { ...(provider.env ?? {}) },
+    config: { ...(provider.config ?? {}) },
+    isDefault: !!provider.isDefault,
+  };
+
+  if (provider.settings?.trim()) {
+    normalized.settings = provider.settings;
+  }
+
+  if (provider.createdAt) {
+    normalized.createdAt = provider.createdAt;
+  }
+
+  return normalized;
+}
+
+function toComparableProvider(provider: Provider): Omit<PersistedProvider, 'createdAt'> {
+  const { createdAt, ...rest } = toPersistedProvider(provider);
+  return rest;
+}
+
+function normalizeProviderDefaults(providers: Provider[]): Provider[] {
+  const lastDefaultIndexByType = new Map<string, number>();
+
+  providers.forEach((provider, index) => {
+    if (provider.isDefault) {
+      lastDefaultIndexByType.set(String(provider.agentType), index);
+    }
+  });
+
+  return providers.map((provider, index) => {
+    const lastDefaultIndex = lastDefaultIndexByType.get(String(provider.agentType));
+    if (lastDefaultIndex === undefined) return provider;
+    return {
+      ...provider,
+      isDefault: lastDefaultIndex === index,
+    };
+  });
+}
+
+function areProvidersEquivalent(a: Provider, b: Provider): boolean {
+  return JSON.stringify(toComparableProvider(a)) === JSON.stringify(toComparableProvider(b));
 }
 
 /**
@@ -191,10 +248,93 @@ export function getDefaultProvider(agentType: AgentType | string): Provider | nu
   return providers.find(p => p.isDefault) ?? providers[0] ?? null;
 }
 
+export function getUserProviders(): Provider[] {
+  return structuredClone(extractUserProviders(getAllProviders()));
+}
+
+export function createProviderBackup(): ProviderBackupFile {
+  return {
+    version: 1,
+    kind: 'provider-backup',
+    exportedAt: new Date().toISOString(),
+    mode: 'full',
+    providers: getUserProviders().map(toPersistedProvider),
+  };
+}
+
+export function previewProviderImport(backup: ProviderBackupFile): ProviderImportPreview {
+  const existingProviders = getAllProviders();
+  const existingById = new Map(existingProviders.map(provider => [provider.id, provider]));
+  const items: ProviderImportPreviewItem[] = [];
+  const summary = {
+    create: 0,
+    overwrite: 0,
+    skip: 0,
+  };
+
+  for (const rawProvider of backup.providers) {
+    const incoming = toPersistedProvider(rawProvider);
+    const existing = existingById.get(incoming.id) ?? null;
+
+    let action: ProviderImportPreviewItem['action'];
+    if (!existing) {
+      action = 'CREATE';
+      summary.create += 1;
+    } else if (areProvidersEquivalent(existing, incoming)) {
+      action = 'SKIP';
+      summary.skip += 1;
+    } else {
+      action = 'OVERWRITE';
+      summary.overwrite += 1;
+    }
+
+    items.push({
+      action,
+      incoming,
+      existing,
+    });
+  }
+
+  return { summary, items };
+}
+
+export function importProvidersFromBackup(backup: ProviderBackupFile): ProviderImportResult {
+  const preview = previewProviderImport(backup);
+  const providers = [...getAllProviders()];
+
+  for (const item of preview.items) {
+    if (item.action === 'SKIP') continue;
+
+    const incoming = toPersistedProvider(item.incoming);
+    const index = providers.findIndex(provider => provider.id === incoming.id);
+
+    if (index === -1) {
+      providers.push({
+        ...incoming,
+        builtIn: false,
+      });
+      continue;
+    }
+
+    providers[index] = {
+      ...providers[index],
+      ...incoming,
+      builtIn: providers[index].builtIn ?? false,
+    };
+  }
+
+  saveProviders(normalizeProviderDefaults(providers));
+
+  return {
+    summary: preview.summary,
+    providers: getAllProviders(),
+  };
+}
+
 // ─── Persistence ─────────────────────────────────────────────────
 
 function saveProviders(providers: Provider[]): void {
-  const userProviders = extractUserProviders(providers);
+  const userProviders = extractUserProviders(providers).map(toPersistedProvider);
   const userPath = getUserProvidersPath();
   const dir = path.dirname(userPath);
 

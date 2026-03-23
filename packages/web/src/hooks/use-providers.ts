@@ -1,7 +1,13 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '../lib/api-client'
 import { queryKeys } from './query-keys'
-import type { Provider, AgentType } from '@agent-tower/shared'
+import type {
+  Provider,
+  AgentType,
+  ProviderBackupFile,
+  ProviderImportPreview,
+  ProviderImportResult,
+} from '@agent-tower/shared'
 
 // ─── Types ───────────────────────────────────────────────────────
 
@@ -91,6 +97,33 @@ export function useReloadProviders() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: () => apiClient.post('/providers/reload'),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.providers.all })
+    },
+  })
+}
+
+/** 导出 Provider 备份 */
+export function useExportProviderBackup() {
+  return useMutation({
+    mutationFn: () => apiClient.get<ProviderBackupFile>('/providers/backup'),
+  })
+}
+
+/** 预览导入结果 */
+export function usePreviewProviderImport() {
+  return useMutation({
+    mutationFn: (backup: ProviderBackupFile) =>
+      apiClient.post<ProviderImportPreview>('/providers/import/preview', backup),
+  })
+}
+
+/** 导入 Provider 备份 */
+export function useImportProviderBackup() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (backup: ProviderBackupFile) =>
+      apiClient.post<ProviderImportResult>('/providers/import', backup),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.providers.all })
     },
