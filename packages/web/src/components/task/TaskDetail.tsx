@@ -8,22 +8,21 @@ import { LogStream } from '@/components/agent'
 import { TodoPanel } from '@/components/agent'
 import { TokenUsageIndicator } from '@/components/agent'
 import { IconRunning, IconReview, IconPending, IconDone, IconCancelled } from '@/components/agent'
-import { Paperclip, ArrowUp, ArrowDown, PanelRightClose, PanelRightOpen, Play, Square, Code2, Trash2, MoreVertical, GitFork, Cpu } from 'lucide-react'
+import { Paperclip, ArrowUp, ArrowDown, PanelRightClose, PanelRightOpen, Play, Square, Code2, Trash2, MoreVertical, GitFork } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Tooltip } from '@/components/ui/tooltip'
-import { truncateMiddle } from '@/lib/utils'
 import { WorkspacePanel } from '@/components/workspace/WorkspacePanel'
 import { useWorkspaces, useOpenInEditor, useGitStatus } from '@/hooks/use-workspaces'
 import { useNormalizedLogs } from '@/lib/socket/hooks/useNormalizedLogs'
 import { useWorkspaceSetupProgress } from '@/lib/socket/hooks/useWorkspaceSetupProgress'
 import { socketManager } from '@/lib/socket/manager'
 import { useSendMessage, useStopSession } from '@/hooks/use-sessions'
-import { useActiveProviderName } from '@/hooks/use-active-provider-name'
+import { useProviders } from '@/hooks/use-providers'
 import { useTodos } from '@/hooks/use-todos'
 import { useTokenUsage } from '@/hooks/useTokenUsage'
 import { useAttachments } from '@/hooks/use-attachments'
 import { AttachmentPreview } from '@/components/ui/AttachmentPreview'
 import { StartAgentDialog } from './StartAgentDialog'
+import { ProviderSelector } from './ProviderSelector'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { ConflictBanner } from '@/components/workspace/ConflictBanner'
 import { ResolveConflictsDialog } from '@/components/workspace/ResolveConflictsDialog'
@@ -265,7 +264,13 @@ export function TaskDetail({ task, onDeleteTask, isDeleting, onTaskStatusChange 
 
   // ============ Provider Info ============
 
-  const activeProviderName = useActiveProviderName(activeSession)
+  const { data: providers } = useProviders()
+  const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null)
+
+  // 当 session 的 providerId 变化时，同步 selectedProviderId
+  useEffect(() => {
+    setSelectedProviderId(activeSession?.providerId ?? null)
+  }, [activeSession?.providerId])
 
   // Whether the displayed session comes from a MERGED workspace (read-only history, no active worktree)
   const isReadOnlySession = useMemo(() => {
@@ -459,7 +464,7 @@ export function TaskDetail({ task, onDeleteTask, isDeleting, onTaskStatusChange 
     // 都调同一个 sendMessage。后端自动处理 PTY 状态。
     // 发送后需要 re-attach 以确保 WebSocket 订阅正确接收新 PTY 的输出。
     sendMessageMutation.mutate(
-      { id: sessionId, message },
+      { id: sessionId, message, providerId: selectedProviderId ?? undefined },
       {
         onSuccess: () => {
           // 后端已 spawn 新 PTY，重新 attach 以确保 socket room 和 MsgStore 监听正确
@@ -470,7 +475,7 @@ export function TaskDetail({ task, onDeleteTask, isDeleting, onTaskStatusChange 
         },
       }
     )
-  }, [input, sessionId, sendMessageMutation, attach, hasAttachments, isUploading, buildMarkdownLinks, clearAttachments])
+  }, [input, sessionId, sendMessageMutation, attach, hasAttachments, isUploading, buildMarkdownLinks, clearAttachments, selectedProviderId])
 
   const handleStop = useCallback(async () => {
     if (!sessionId) return
@@ -874,13 +879,13 @@ export function TaskDetail({ task, onDeleteTask, isDeleting, onTaskStatusChange 
                 </div>
 
                 <div className="flex items-center gap-2">
-                  {activeProviderName && (
-                    <Tooltip content={activeProviderName}>
-                      <span className="flex items-center gap-1 text-xs text-neutral-400 px-2 py-1.5 select-none cursor-default">
-                        <Cpu size={14} className="shrink-0" />
-                        <span>{truncateMiddle(activeProviderName, 12)}</span>
-                      </span>
-                    </Tooltip>
+                  {activeSession && providers && (
+                    <ProviderSelector
+                      providers={providers}
+                      currentProviderId={selectedProviderId}
+                      agentType={activeSession.agentType}
+                      onSelect={setSelectedProviderId}
+                    />
                   )}
                   <TokenUsageIndicator usage={tokenUsage} />
                   {isSessionActive && !input.trim() && !hasAttachments ? (

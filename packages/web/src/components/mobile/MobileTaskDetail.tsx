@@ -5,7 +5,7 @@ import { SessionStatus, type Session } from '@agent-tower/shared'
 import { LogStream, TodoPanel, TokenUsageIndicator } from '@/components/agent'
 import {
   ArrowLeft, ArrowUp, ArrowDown, Paperclip, Play, Square,
-  MessageSquare, FolderOpen, GitGraph, Code2, Trash2, MoreVertical, History, Cpu,
+  MessageSquare, FolderOpen, GitGraph, Code2, Trash2, MoreVertical, History,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { WorkspacePanel } from '@/components/workspace/WorkspacePanel'
@@ -14,13 +14,13 @@ import { MobileHistoryView } from './MobileHistoryView'
 import { useWorkspaces, useOpenInEditor } from '@/hooks/use-workspaces'
 import { useNormalizedLogs } from '@/lib/socket/hooks/useNormalizedLogs'
 import { useSendMessage, useStopSession } from '@/hooks/use-sessions'
-import { useActiveProviderName } from '@/hooks/use-active-provider-name'
+import { useProviders } from '@/hooks/use-providers'
 import { useTodos } from '@/hooks/use-todos'
 import { useTokenUsage } from '@/hooks/useTokenUsage'
 import { useAttachments } from '@/hooks/use-attachments'
-import { truncateMiddle } from '@/lib/utils'
 import { AttachmentPreview } from '@/components/ui/AttachmentPreview'
 import { StartAgentDialog } from '@/components/task/StartAgentDialog'
+import { ProviderSelector } from '@/components/task/ProviderSelector'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import type { UITaskDetailData } from '@/components/task/types'
 import { UITaskStatus } from '@/components/task/types'
@@ -166,7 +166,13 @@ export function MobileTaskDetail({ task, onBack, onDeleteTask, isDeleting }: Mob
 
   // ============ Provider Info ============
 
-  const activeProviderName = useActiveProviderName(activeSession)
+  const { data: providers } = useProviders()
+  const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null)
+
+  // 当 session 的 providerId 变化时，同步 selectedProviderId
+  useEffect(() => {
+    setSelectedProviderId(activeSession?.providerId ?? null)
+  }, [activeSession?.providerId])
 
   const workingDir = useMemo(() => {
     if (!workspaces) return undefined
@@ -257,13 +263,13 @@ export function MobileTaskDetail({ task, onBack, onDeleteTask, isDeleting }: Mob
     if (textareaRef.current) textareaRef.current.style.height = '40px'
 
     sendMessageMutation.mutate(
-      { id: sessionId, message },
+      { id: sessionId, message, providerId: selectedProviderId ?? undefined },
       {
         onSuccess: () => attach(),
         onSettled: () => { sendingRef.current = false },
       }
     )
-  }, [input, sessionId, sendMessageMutation, attach, hasAttachments, isUploading, buildMarkdownLinks, clearAttachments])
+  }, [input, sessionId, sendMessageMutation, attach, hasAttachments, isUploading, buildMarkdownLinks, clearAttachments, selectedProviderId])
 
   const handleStop = useCallback(async () => {
     if (!sessionId) return
@@ -568,11 +574,13 @@ export function MobileTaskDetail({ task, onBack, onDeleteTask, isDeleting }: Mob
                     </button>
                   </div>
                   <div className="flex items-center gap-1">
-                    {activeProviderName && (
-                      <span className="flex items-center gap-0.5 text-[11px] text-neutral-400 px-1.5 py-0.5 select-none">
-                        <Cpu size={12} className="shrink-0" />
-                        <span>{truncateMiddle(activeProviderName, 10)}</span>
-                      </span>
+                    {activeSession && providers && (
+                      <ProviderSelector
+                        providers={providers}
+                        currentProviderId={selectedProviderId}
+                        agentType={activeSession.agentType}
+                        onSelect={setSelectedProviderId}
+                      />
                     )}
                     <TokenUsageIndicator usage={tokenUsage} />
                     {isSessionActive && !input.trim() && !hasAttachments ? (

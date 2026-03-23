@@ -30,6 +30,7 @@ const createSessionSchema = z.object({
 
 const sendMessageSchema = z.object({
   message: z.string().min(1),
+  providerId: z.string().optional(),
 });
 
 export async function sessionRoutes(app: FastifyInstance) {
@@ -116,7 +117,8 @@ export async function sessionRoutes(app: FastifyInstance) {
       try {
         const result = await sessionService.sendMessage(
           request.params.id,
-          body.message
+          body.message,
+          body.providerId
         );
         if (!result) {
           reply.code(404);

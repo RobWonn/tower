@@ -61,8 +61,8 @@ export function useSendMessage() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: ({ id, message }: { id: string; message: string }) =>
-      apiClient.post<void>(`/sessions/${id}/message`, { message }),
+    mutationFn: ({ id, message, providerId }: { id: string; message: string; providerId?: string }) =>
+      apiClient.post<void>(`/sessions/${id}/message`, { message, providerId }),
     onSuccess: () => {
       // sendMessage 现在可能 spawn 新 PTY（从 COMPLETED → RUNNING），
       // 需要 invalidate workspaces 让前端 session 状态刷新

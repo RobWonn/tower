@@ -150,10 +150,13 @@ export class SessionManager {
     return session;
   }
 
-  async sendMessage(id: string, message: string) {
+  async sendMessage(id: string, message: string, providerId?: string) {
     console.log('[SessionManager] 📨 Sending message to session:', id);
     console.log('[SessionManager] Message length:', message.length);
     console.log('[SessionManager] Message preview:', message.substring(0, 200));
+    if (providerId) {
+      console.log('[SessionManager] Switching provider to:', providerId);
+    }
 
     const session = await prisma.session.findUnique({
       where: { id },
@@ -162,6 +165,26 @@ export class SessionManager {
     if (!session) {
       console.log('[SessionManager] ❌ Session not found:', id);
       return null;
+    }
+
+    // 如果传入了新的 providerId，验证并切换
+    if (providerId && providerId !== session.providerId) {
+      const newProvider = getProviderById(providerId);
+      if (!newProvider) {
+        throw new Error(`Provider not found: ${providerId}`);
+      }
+      // 验证 provider 的 agentType 与 session 一致（仅支持同 agentType 内切换）
+      if (String(newProvider.agentType) !== session.agentType) {
+        throw new Error(
+          `Cannot switch provider: agentType mismatch. Session uses '${session.agentType}', but provider '${newProvider.name}' is for '${newProvider.agentType}'`
+        );
+      }
+      // 持久化切换后的 providerId
+      await prisma.session.update({
+        where: { id },
+        data: { providerId },
+      });
+      console.log(`[SessionManager] ✅ Provider switched to: ${newProvider.name} (${providerId})`);
     }
 
     const existing = this.pipelines.get(id);
@@ -219,19 +242,21 @@ export class SessionManager {
 
     const agentSessionId = this.resolveAgentSessionId(id, session.logSnapshot);
     const agentType = session.agentType as AgentType;
-    const executor = session.providerId
-      ? getExecutorByProvider(session.providerId)
+    // 优先使用传入的 providerId，否则使用 session 中的 providerId
+    const effectiveProviderId = providerId ?? session.providerId ?? undefined;
+    const executor = effectiveProviderId
+      ? getExecutorByProvider(effectiveProviderId)
       : getExecutor(agentType, session.variant ?? 'DEFAULT');
     if (!executor) {
-      throw new Error(`Executor not found for agent type: ${session.agentType}${session.providerId ? ` (provider: ${session.providerId})` : ''}`);
+      throw new Error(`Executor not found for agent type: ${session.agentType}${effectiveProviderId ? ` (provider: ${effectiveProviderId})` : ''}`);
     }
 
     const workingDir = session.workspace.worktreePath;
     const env = ExecutionEnv.default(workingDir);
 
     // 如果有 provider，注入 provider 的环境变量
-    if (session.providerId) {
-      const provider = getProviderById(session.providerId);
+    if (effectiveProviderId) {
+      const provider = getProviderById(effectiveProviderId);
       if (provider && Object.keys(provider.env).length > 0) {
         env.merge(provider.env);
       }
