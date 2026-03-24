@@ -12,7 +12,9 @@ import type {
 // ─── Types ───────────────────────────────────────────────────────
 
 export interface ProviderWithAvailability {
-  provider: Provider
+  provider: Provider & {
+    deletable?: boolean
+  }
   availability: {
     type: 'LOGIN_DETECTED' | 'INSTALLATION_FOUND' | 'NOT_FOUND'
     lastAuthTimestamp?: number

@@ -230,6 +230,7 @@ export {
   createProvider,
   updateProvider,
   deleteProvider,
+  canDeleteProvider,
   loadProviders,
   reloadProviders,
   getDefaultProviders,

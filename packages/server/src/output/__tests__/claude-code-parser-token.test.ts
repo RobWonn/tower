@@ -14,6 +14,11 @@ function getTokenEntries(store: MsgStore) {
   return snap.entries.filter((e) => e.entryType === 'token_usage_info')
 }
 
+function getAssistantEntries(store: MsgStore) {
+  const snap = store.getSnapshot()
+  return snap.entries.filter((e) => e.entryType === 'assistant_message')
+}
+
 describe('Claude Code Token - 使用 assistant 消息的 per-turn usage', () => {
   it('should use last assistant message usage (not cumulative result usage)', () => {
     const store = new MsgStore()
@@ -110,6 +115,53 @@ describe('Claude Code Token - 使用 assistant 消息的 per-turn usage', () => 
     const tu = entries[0].metadata!.tokenUsage!
     // 5000 + 10000 + 30000 = 45000 (不含 output_tokens)
     expect(tu.totalTokens).toBe(45000)
+  })
+})
+
+describe('Claude Code Parser - provider compatibility', () => {
+  it('should create an assistant entry when provider only returns final assistant message', () => {
+    const store = new MsgStore()
+    const parser = new ClaudeCodeParser(store)
+
+    feedLine(parser, {
+      type: 'assistant',
+      message: {
+        id: 'msg-1',
+        role: 'assistant',
+        content: [{ type: 'text', text: '你好！有什么我可以帮你的吗？' }],
+        usage: { input_tokens: 1, output_tokens: 1 },
+      },
+    })
+
+    const entries = getAssistantEntries(store)
+    expect(entries).toHaveLength(1)
+    expect(entries[0].content).toBe('你好！有什么我可以帮你的吗？')
+  })
+
+  it('should create an assistant entry when provider emits message_start without content_block events', () => {
+    const store = new MsgStore()
+    const parser = new ClaudeCodeParser(store)
+
+    feedLine(parser, {
+      type: 'stream_event',
+      event: {
+        type: 'message_start',
+        message: { id: 'stream-msg', role: 'assistant' },
+      },
+    })
+
+    feedLine(parser, {
+      type: 'assistant',
+      message: {
+        id: 'final-msg',
+        role: 'assistant',
+        content: [{ type: 'text', text: '最终回复仍然应该显示' }],
+      },
+    })
+
+    const entries = getAssistantEntries(store)
+    expect(entries).toHaveLength(1)
+    expect(entries[0].content).toBe('最终回复仍然应该显示')
   })
 })
 

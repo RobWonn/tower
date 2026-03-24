@@ -11,6 +11,7 @@ import {
 } from '@/hooks/use-providers'
 import type { CreateProviderInput, UpdateProviderInput } from '@/hooks/use-providers'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Modal } from '@/components/ui/modal'
 import { Select } from '@/components/ui/select'
 import { Plus, Pencil, Trash2, CheckCircle2, XCircle, ChevronDown, Download, Upload } from 'lucide-react'
@@ -772,6 +773,11 @@ export function ProviderSettingsPage() {
 
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [editModal, setEditModal] = useState<{ id?: string; data?: ProviderFormData } | null>(null)
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    id: string
+    name: string
+    builtIn?: boolean
+  } | null>(null)
   const [isExportBackupOpen, setIsExportBackupOpen] = useState(false)
   const [exportAcknowledged, setExportAcknowledged] = useState(false)
   const [importPreviewState, setImportPreviewState] = useState<{
@@ -791,13 +797,33 @@ export function ProviderSettingsPage() {
     })
   }
 
-  const handleDelete = (id: string, name: string, builtIn?: boolean) => {
-    if (builtIn) {
-      toast.error('内置 Provider 不可删除')
+  const handleDelete = (provider: { id: string; name: string; builtIn?: boolean; deletable?: boolean }) => {
+    const canDelete = provider.deletable ?? !provider.builtIn
+
+    if (!canDelete) {
+      toast.error('系统内置 Provider 不可删除')
       return
     }
-    if (!confirm(`确定删除 "${name}"？`)) return
-    deleteProvider.mutate(id)
+
+    setDeleteConfirm({
+      id: provider.id,
+      name: provider.name,
+      builtIn: provider.builtIn,
+    })
+  }
+
+  const handleConfirmDelete = () => {
+    if (!deleteConfirm) return
+
+    deleteProvider.mutate(deleteConfirm.id, {
+      onSuccess: () => {
+        toast.success(deleteConfirm.builtIn ? '已恢复默认 Provider 配置' : 'Provider 已删除')
+        setDeleteConfirm(null)
+      },
+      onError: error => {
+        toast.error(getErrorMessage(error, '删除 Provider 失败'))
+      },
+    })
   }
 
   const closeExportBackup = () => {
@@ -1000,10 +1026,10 @@ export function ProviderSettingsPage() {
                       <Pencil size={14} />
                     </button>
                     <button
-                      onClick={() => handleDelete(provider.id, provider.name, provider.builtIn)}
+                      onClick={() => handleDelete(provider)}
                       className="p-2 text-neutral-400 hover:text-red-600 transition-colors"
-                      title="删除"
-                      disabled={provider.builtIn}
+                      title={provider.deletable === false ? '系统内置 Provider 不可删除' : provider.builtIn ? '删除自定义覆盖并恢复默认' : '删除'}
+                      disabled={provider.deletable === false}
                     >
                       <Trash2 size={14} />
                     </button>
@@ -1029,6 +1055,26 @@ export function ProviderSettingsPage() {
           }}
         />
       )}
+
+      <ConfirmDialog
+        isOpen={deleteConfirm !== null}
+        onClose={() => {
+          if (!deleteProvider.isPending) {
+            setDeleteConfirm(null)
+          }
+        }}
+        onConfirm={handleConfirmDelete}
+        title={deleteConfirm?.builtIn ? '恢复默认 Provider' : '删除 Provider'}
+        description={
+          deleteConfirm?.builtIn
+            ? `确定删除 "${deleteConfirm?.name}" 的自定义覆盖，并恢复系统默认配置？`
+            : `确定删除 "${deleteConfirm?.name}"？此操作不可撤销。`
+        }
+        confirmText={deleteConfirm?.builtIn ? '恢复默认' : '删除'}
+        cancelText="取消"
+        variant="danger"
+        isLoading={deleteProvider.isPending}
+      />
 
       <ExportBackupModal
         isOpen={isExportBackupOpen}

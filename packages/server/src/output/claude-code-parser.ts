@@ -329,19 +329,29 @@ export class ClaudeCodeParser {
         const existingIndex = streamingState?.contents.get(contentIndex)?.entryIndex
         this.handleToolUse(block.name, block.input, msg.message.id, existingIndex)
       } else if (block.type === 'text' && block.text) {
-        // 用完整内容 replace stream_event 阶段的 entry
+        // 优先用完整内容 replace stream_event 阶段的 entry；
+        // 某些 provider 不返回 content_block_*，此时直接补建 assistant entry。
         const existingIndex = streamingState?.contents.get(contentIndex)?.entryIndex
         if (existingIndex != null) {
           const entry = createAssistantMessage(block.text)
           const patch = replaceNormalizedEntry(existingIndex, entry)
           this.msgStore.pushPatch(patch)
+        } else {
+          const entry = createAssistantMessage(block.text)
+          const index = this.indexProvider.next()
+          const patch = addNormalizedEntry(index, entry)
+          this.msgStore.pushPatch(patch)
         }
-        // 如果没有 streaming state（没走 stream_event），不创建新 entry 避免重复
       } else if (block.type === 'thinking' && block.thinking) {
         const existingIndex = streamingState?.contents.get(contentIndex)?.entryIndex
         if (existingIndex != null) {
           const entry = createThinking(block.thinking)
           const patch = replaceNormalizedEntry(existingIndex, entry)
+          this.msgStore.pushPatch(patch)
+        } else {
+          const entry = createThinking(block.thinking)
+          const index = this.indexProvider.next()
+          const patch = addNormalizedEntry(index, entry)
           this.msgStore.pushPatch(patch)
         }
       }

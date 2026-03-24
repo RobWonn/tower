@@ -153,6 +153,12 @@ function areProvidersEquivalent(a: Provider, b: Provider): boolean {
   return JSON.stringify(toComparableProvider(a)) === JSON.stringify(toComparableProvider(b));
 }
 
+function getBuiltInProviderById(id: string): Provider | null {
+  const provider = DEFAULT_PROVIDERS.providers.find(p => p.id === id);
+  if (!provider) return null;
+  return { ...structuredClone(provider), builtIn: true as const };
+}
+
 /**
  * 提取用户自定义部分（与默认不同的 + 新增的）
  */
@@ -397,17 +403,33 @@ export function updateProvider(id: string, data: Partial<Omit<Provider, 'id' | '
 }
 
 export function deleteProvider(id: string): boolean {
-  const providers = getAllProviders();
+  const providers = [...getAllProviders()];
   const provider = providers.find(p => p.id === id);
 
   if (!provider) return false;
   if (provider.builtIn) {
-    throw new Error(`Cannot delete built-in provider '${provider.name}'`);
+    const builtInProvider = getBuiltInProviderById(id);
+    const isOverridden = builtInProvider ? !areProvidersEquivalent(provider, builtInProvider) : false;
+
+    if (!builtInProvider || !isOverridden) {
+      throw new Error(`Cannot delete built-in provider '${provider.name}'`);
+    }
+
+    const restored = providers.map(p => (p.id === id ? builtInProvider : p));
+    saveProviders(normalizeProviderDefaults(restored));
+    return true;
   }
 
   const filtered = providers.filter(p => p.id !== id);
-  saveProviders(filtered);
+  saveProviders(normalizeProviderDefaults(filtered));
   return true;
+}
+
+export function canDeleteProvider(provider: Provider): boolean {
+  if (!provider.builtIn) return true;
+  const builtInProvider = getBuiltInProviderById(provider.id);
+  if (!builtInProvider) return false;
+  return !areProvidersEquivalent(provider, builtInProvider);
 }
 
 /**

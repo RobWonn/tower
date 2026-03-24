@@ -5,8 +5,11 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { ProviderBackupFile } from '@agent-tower/shared';
 import { AgentType } from '../../types/index.js';
 import {
+  canDeleteProvider,
   createProviderBackup,
+  deleteProvider,
   getAllProviders,
+  getDefaultProviders,
   importProvidersFromBackup,
   previewProviderImport,
   reloadProviders,
@@ -151,5 +154,46 @@ describe('providers backup/import', () => {
     expect(providers.find(provider => provider.id === 'overwrite-provider')?.isDefault).toBe(true);
     expect(providers.find(provider => provider.id === 'claude-code-default')?.isDefault).toBe(false);
     expect(providers.find(provider => provider.id === 'same-provider')?.name).toBe('Same Provider');
+  });
+
+  it('deletes a user override for a built-in provider by restoring the default provider', () => {
+    writeUserProviders([
+      {
+        id: 'claude-code-default',
+        name: 'Claude Override',
+        agentType: AgentType.CLAUDE_CODE,
+        env: { ANTHROPIC_BASE_URL: 'https://proxy.example.com' },
+        config: { dangerouslySkipPermissions: true, model: 'claude-opus-4-6' },
+        isDefault: true,
+      },
+    ]);
+
+    reloadProviders();
+
+    const beforeDelete = getAllProviders().find(provider => provider.id === 'claude-code-default');
+    expect(beforeDelete).toBeDefined();
+    expect(beforeDelete?.builtIn).toBe(true);
+    expect(canDeleteProvider(beforeDelete!)).toBe(true);
+
+    expect(deleteProvider('claude-code-default')).toBe(true);
+
+    const restored = getAllProviders().find(provider => provider.id === 'claude-code-default');
+    const defaultProvider = getDefaultProviders().find(provider => provider.id === 'claude-code-default');
+
+    expect(restored).toBeDefined();
+    expect(defaultProvider).toBeDefined();
+    expect(restored?.name).toBe(defaultProvider?.name);
+    expect(restored?.env).toEqual(defaultProvider?.env);
+    expect(canDeleteProvider(restored!)).toBe(false);
+  });
+
+  it('rejects deleting a pure built-in provider', () => {
+    reloadProviders();
+
+    const builtInProvider = getAllProviders().find(provider => provider.id === 'claude-code-default');
+    expect(builtInProvider).toBeDefined();
+    expect(canDeleteProvider(builtInProvider!)).toBe(false);
+
+    expect(() => deleteProvider('claude-code-default')).toThrow(/Cannot delete built-in provider/);
   });
 });

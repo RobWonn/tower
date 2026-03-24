@@ -22,6 +22,7 @@ import {
   createProvider,
   updateProvider,
   deleteProvider,
+  canDeleteProvider,
   reloadProviders,
   getAllProvidersAvailability,
 } from '../executors/index.js';
@@ -90,7 +91,13 @@ export async function providerRoutes(app: FastifyInstance) {
   // 获取所有 providers（带可用性检查）
   app.get('/providers', async () => {
     const providersWithAvailability = await getAllProvidersAvailability();
-    return providersWithAvailability;
+    return providersWithAvailability.map(item => ({
+      ...item,
+      provider: {
+        ...item.provider,
+        deletable: canDeleteProvider(item.provider),
+      },
+    }));
   });
 
   // 导出 Provider 备份（仅用户层配置）
@@ -129,7 +136,10 @@ export async function providerRoutes(app: FastifyInstance) {
         reply.code(404);
         return { error: `Provider not found: ${request.params.id}` };
       }
-      return provider;
+      return {
+        ...provider,
+        deletable: canDeleteProvider(provider),
+      };
     }
   );
 
