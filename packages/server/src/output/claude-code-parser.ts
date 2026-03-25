@@ -336,7 +336,9 @@ export class ClaudeCodeParser {
           const entry = createAssistantMessage(block.text)
           const patch = replaceNormalizedEntry(existingIndex, entry)
           this.msgStore.pushPatch(patch)
-        } else {
+        } else if (!streamingState) {
+          // 仅当确实没走过 stream_event（streamingState 不存在）时才补建 entry
+          // streamingState 存在但 contentIndex 找不到时，说明 stream_event 已处理过，不应重复创建
           const entry = createAssistantMessage(block.text)
           const index = this.indexProvider.next()
           const patch = addNormalizedEntry(index, entry)
@@ -348,7 +350,8 @@ export class ClaudeCodeParser {
           const entry = createThinking(block.thinking)
           const patch = replaceNormalizedEntry(existingIndex, entry)
           this.msgStore.pushPatch(patch)
-        } else {
+        } else if (!streamingState) {
+          // 同上：仅无 streaming state 时才补建
           const entry = createThinking(block.thinking)
           const index = this.indexProvider.next()
           const patch = addNormalizedEntry(index, entry)
