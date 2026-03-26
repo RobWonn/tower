@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z, ZodError } from 'zod';
 import { execFile } from 'node:child_process';
 import * as path from 'node:path';
+import { prisma } from '../utils/index.js';
 
 function handleError(error: unknown, reply: any) {
   if (error instanceof ZodError) {
@@ -32,6 +33,24 @@ function execGit(cwd: string, args: string[]): Promise<string> {
 }
 
 type ChangeEntry = { status: string; path: string };
+
+async function resolveBaseBranch(workingDir: string): Promise<string | null> {
+  const workspace = await prisma.workspace.findFirst({
+    where: { worktreePath: workingDir },
+    include: { task: { include: { project: true } } },
+    orderBy: { updatedAt: 'desc' },
+  });
+
+  if (!workspace) {
+    return null;
+  }
+
+  return workspace.baseBranch || workspace.task.project.mainBranch;
+}
+
+function getRemoteBranchRef(branch: string): string {
+  return branch.startsWith('origin/') ? branch : `origin/${branch}`;
+}
 
 function parseNameStatus(output: string): ChangeEntry[] {
   if (!output.trim()) return [];
@@ -103,11 +122,12 @@ export async function gitRoutes(app: FastifyInstance) {
 
   /**
    * GET /changes?workingDir=/path/to/worktree
-   * Returns uncommitted and committed changes relative to main.
+   * Returns uncommitted changes vs HEAD and committed changes vs workspace base branch.
    */
   app.get('/changes', async (request, reply) => {
     try {
       const { workingDir } = changesQuerySchema.parse(request.query);
+      const baseBranch = await resolveBaseBranch(workingDir);
 
       // Uncommitted changes (staged + unstaged vs HEAD)
       let uncommitted: ChangeEntry[] = [];
@@ -139,18 +159,26 @@ export async function gitRoutes(app: FastifyInstance) {
         // ignore
       }
 
-      // Committed changes (main...HEAD)
+      // Committed changes (baseBranch...HEAD)
+      const committedBaseBranch = baseBranch || 'main';
       let committed: ChangeEntry[] = [];
       try {
-        const output = await execGit(workingDir, ['diff', '--name-status', 'main...HEAD']);
+        const output = await execGit(workingDir, [
+          'diff',
+          '--name-status',
+          `${committedBaseBranch}...HEAD`,
+        ]);
         committed = parseNameStatus(output);
       } catch {
-        // main branch might not exist — try origin/main
         try {
-          const output = await execGit(workingDir, ['diff', '--name-status', 'origin/main...HEAD']);
+          const output = await execGit(workingDir, [
+            'diff',
+            '--name-status',
+            `${getRemoteBranchRef(committedBaseBranch)}...HEAD`,
+          ]);
           committed = parseNameStatus(output);
         } catch {
-          // ignore — no main branch to compare against
+          // ignore — no base branch to compare against
         }
       }
 
@@ -167,7 +195,9 @@ export async function gitRoutes(app: FastifyInstance) {
   app.get('/diff', async (request, reply) => {
     try {
       const { workingDir, path: filePath, type } = diffQuerySchema.parse(request.query);
+      const baseBranch = type === 'committed' ? await resolveBaseBranch(workingDir) : null;
 
+      const committedBaseBranch = baseBranch || 'main';
       let diff = '';
       try {
         if (type === 'uncommitted') {
@@ -179,11 +209,12 @@ export async function gitRoutes(app: FastifyInstance) {
             );
           }
         } else {
-          diff = await execGit(workingDir, ['diff', 'main...HEAD', '--', filePath]);
+          diff = await execGit(workingDir, ['diff', `${committedBaseBranch}...HEAD`, '--', filePath]);
           if (!diff.trim()) {
-            diff = await execGit(workingDir, ['diff', 'origin/main...HEAD', '--', filePath]).catch(
-              () => '',
-            );
+            diff = await execGit(
+              workingDir,
+              ['diff', `${getRemoteBranchRef(committedBaseBranch)}...HEAD`, '--', filePath]
+            ).catch(() => '');
           }
         }
       } catch {

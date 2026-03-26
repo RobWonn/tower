@@ -3,7 +3,13 @@ import { useStickToBottom } from 'use-stick-to-bottom'
 import { useQueryClient } from '@tanstack/react-query'
 import { SessionStatus, type Session } from '@agent-tower/shared'
 import type { ConflictOp } from '@agent-tower/shared'
-import { ServerEvents, ClientEvents, type SessionCompletedPayload, type TaskUpdatedPayload } from '@agent-tower/shared/socket'
+import {
+  ServerEvents,
+  ClientEvents,
+  type SessionCompletedPayload,
+  type TaskUpdatedPayload,
+  type WorkspaceCommitMessageUpdatedPayload,
+} from '@agent-tower/shared/socket'
 import { LogStream } from '@/components/agent'
 import { TodoPanel } from '@/components/agent'
 import { TokenUsageIndicator } from '@/components/agent'
@@ -12,6 +18,7 @@ import { Paperclip, ArrowUp, ArrowDown, PanelRightClose, PanelRightOpen, Play, S
 import { Button } from '@/components/ui/button'
 import { WorkspacePanel } from '@/components/workspace/WorkspacePanel'
 import { useWorkspaces, useOpenInEditor, useGitStatus } from '@/hooks/use-workspaces'
+import { queryKeys } from '@/hooks/query-keys'
 import { useNormalizedLogs } from '@/lib/socket/hooks/useNormalizedLogs'
 import { useWorkspaceSetupProgress } from '@/lib/socket/hooks/useWorkspaceSetupProgress'
 import { socketManager } from '@/lib/socket/manager'
@@ -325,6 +332,10 @@ export function TaskDetail({ task, onDeleteTask, isDeleting, onTaskStatusChange 
   // ============ Query Client & Mutations ============
 
   const queryClient = useQueryClient()
+  const refreshWorkspaces = useCallback(() => {
+    if (!task?.id) return Promise.resolve()
+    return queryClient.invalidateQueries({ queryKey: queryKeys.workspaces.list(task.id) })
+  }, [task?.id, queryClient])
 
   // Close more-menu on outside click
   useEffect(() => {
@@ -380,10 +391,16 @@ export function TaskDetail({ task, onDeleteTask, isDeleting, onTaskStatusChange 
       if (payload.taskId !== task.id) return
       queryClient.invalidateQueries({ queryKey: ['tasks'] })
     }
+    const handleWorkspaceCommitMessageUpdated = (payload: WorkspaceCommitMessageUpdatedPayload) => {
+      if (payload.taskId !== task.id) return
+      queryClient.invalidateQueries({ queryKey: queryKeys.workspaces.list(task.id) })
+    }
     socket.on(ServerEvents.TASK_UPDATED, handleTaskUpdated)
+    socket.on(ServerEvents.WORKSPACE_COMMIT_MESSAGE_UPDATED, handleWorkspaceCommitMessageUpdated)
 
     return () => {
       socket.off(ServerEvents.TASK_UPDATED, handleTaskUpdated)
+      socket.off(ServerEvents.WORKSPACE_COMMIT_MESSAGE_UPDATED, handleWorkspaceCommitMessageUpdated)
       socket.emit(ClientEvents.UNSUBSCRIBE, { topic: 'task', id: task.id })
     }
   }, [task?.id, queryClient])
@@ -950,6 +967,7 @@ export function TaskDetail({ task, onDeleteTask, isDeleting, onTaskStatusChange 
           branchName={activeWorkspaceBranch}
           targetBranch={task.mainBranch}
           commitMessage={activeWorkspaceCommitMessage}
+          onRefreshCommitMessage={refreshWorkspaces}
           onConflict={() => setIsResolveDialogOpen(true)}
         />
       )}

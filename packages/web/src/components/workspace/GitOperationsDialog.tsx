@@ -12,6 +12,8 @@ interface GitOperationsDialogProps {
   targetBranch: string
   /** AI 生成的 commit message（缓存在 workspace 上） */
   commitMessage?: string | null
+  /** 打开弹窗时补拉一次 workspace，兜底隐藏 session 造成的缓存延迟 */
+  onRefreshCommitMessage?: () => void | Promise<unknown>
   onConflict: () => void
 }
 
@@ -108,6 +110,7 @@ export function GitOperationsDialog({
   branchName,
   targetBranch,
   commitMessage,
+  onRefreshCommitMessage,
   onConflict,
 }: GitOperationsDialogProps) {
   const { data: gitStatus, isLoading } = useGitStatus(workspaceId)
@@ -116,19 +119,32 @@ export function GitOperationsDialog({
   const [error, setError] = useState<string | null>(null)
   const [mergeStep, setMergeStep] = useState<MergeStep>('select')
   const [editableMessage, setEditableMessage] = useState('')
+  const [hasEditedMessage, setHasEditedMessage] = useState(false)
 
   const hasConflicts = gitStatus ? gitStatus.conflictedFiles.length > 0 : false
   const isOperationInProgress = gitStatus ? gitStatus.operation !== 'idle' : false
   const isDirty = gitStatus?.hasUncommittedChanges ?? false
 
-  // 当 commitMessage 变化或弹窗打开时，初始化编辑器内容
+  // 打开弹窗时重置状态，并补拉一次 workspace 数据兜底。
   useEffect(() => {
     if (open) {
       setMergeStep('select')
       setError(null)
-      setEditableMessage(commitMessage ?? '')
+      setHasEditedMessage(false)
+      void onRefreshCommitMessage?.()
     }
-  }, [open, commitMessage])
+  }, [open, onRefreshCommitMessage])
+
+  // 仅在用户尚未手动编辑时，同步后端最新生成的 commit message。
+  useEffect(() => {
+    if (!open || hasEditedMessage) return
+    setEditableMessage(commitMessage ?? '')
+  }, [open, commitMessage, hasEditedMessage])
+
+  const handleEditableMessageChange = (value: React.SetStateAction<string>) => {
+    setHasEditedMessage(true)
+    setEditableMessage((prev) => (typeof value === 'function' ? value(prev) : value))
+  }
 
   const handleRebase = () => {
     setError(null)
@@ -184,7 +200,7 @@ export function GitOperationsDialog({
       ) : mergeStep === 'confirm' ? (
         <MergeConfirmView
           editableMessage={editableMessage}
-          setEditableMessage={setEditableMessage}
+          setEditableMessage={handleEditableMessageChange}
           error={error}
           isPending={mergeWorkspace.isPending}
           onConfirm={handleMergeConfirm}

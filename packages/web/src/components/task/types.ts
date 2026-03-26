@@ -65,7 +65,7 @@ export interface UITaskDetailData {
   status: UITaskStatus
   /** 当前工作分支（来自活跃 Workspace） */
   branch: string
-  /** 项目主分支（如 main） */
+  /** Git 操作目标基础分支（优先 workspace.baseBranch） */
   mainBranch: string
   description: string
 }

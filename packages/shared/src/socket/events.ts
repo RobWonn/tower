@@ -33,6 +33,7 @@ export const ServerEvents = {
   TERMINAL_UNSUBSCRIBED: 'terminal:unsubscribed',
   // Workspace setup progress
   WORKSPACE_SETUP_PROGRESS: 'workspace:setup_progress',
+  WORKSPACE_COMMIT_MESSAGE_UPDATED: 'workspace:commit_message_updated',
 } as const;
 
 export interface SubscribePayload {
@@ -176,6 +177,12 @@ export interface WorkspaceSetupProgressPayload {
   totalCommands: number;
   /** 失败时的错误信息 */
   error?: string;
+}
+
+export interface WorkspaceCommitMessageUpdatedPayload {
+  workspaceId: string;
+  taskId: string;
+  commitMessage: string | null;
 }
 
 export type ClientEventType = typeof ClientEvents[keyof typeof ClientEvents];

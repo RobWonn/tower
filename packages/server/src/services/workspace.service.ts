@@ -19,6 +19,13 @@ export class WorkspaceService {
   private sessionService = getSessionManager();
   private eventBus: EventBus = getEventBus();
 
+  private getBaseBranch(workspace: {
+    baseBranch: string | null;
+    task: { project: { mainBranch: string } };
+  }): string {
+    return workspace.baseBranch || workspace.task.project.mainBranch;
+  }
+
   // ── Queries ──────────────────────────────────────────────────────────────────
 
   async findById(id: string) {
@@ -110,6 +117,10 @@ export class WorkspaceService {
     try {
       // 生成分支名：用户指定 or 自动生成 at/{shortId}
       const branch = branchName || `at/${workspace.id.slice(0, 8)}`;
+      const currentBranch = (
+        await execGit(task.project.repoPath, ['rev-parse', '--abbrev-ref', 'HEAD'])
+      ).trim();
+      const baseBranch = currentBranch && currentBranch !== 'HEAD' ? currentBranch : null;
 
       // WorktreeManager.create 内部已做分支名合法性校验和重复检查
       const worktreePath = await worktreeManager.create(branch);
@@ -121,7 +132,7 @@ export class WorkspaceService {
       // 更新数据库记录：填入真正的 branchName 和 worktreePath
       const updated = await prisma.workspace.update({
         where: { id: workspace.id },
-        data: { branchName: branch, worktreePath },
+        data: { branchName: branch, baseBranch, worktreePath },
         include: { sessions: true, task: { include: { project: true } } },
       });
 
@@ -201,7 +212,7 @@ export class WorkspaceService {
     const worktreeManager = new WorktreeManager(workspace.task.project.repoPath);
     return worktreeManager.getDiff(
       workspace.worktreePath,
-      workspace.task.project.mainBranch
+      this.getBaseBranch(workspace)
     );
   }
 
@@ -225,7 +236,7 @@ export class WorkspaceService {
     const worktreeManager = new WorktreeManager(workspace.task.project.repoPath);
     await worktreeManager.rebase(
       workspace.worktreePath,
-      workspace.task.project.mainBranch
+      this.getBaseBranch(workspace)
     );
   }
 
@@ -245,7 +256,7 @@ export class WorkspaceService {
     const worktreeManager = new WorktreeManager(workspace.task.project.repoPath);
     return worktreeManager.getGitOperationStatus(
       workspace.worktreePath,
-      workspace.task.project.mainBranch
+      this.getBaseBranch(workspace)
     );
   }
 
@@ -290,7 +301,7 @@ export class WorkspaceService {
     const worktreeManager = new WorktreeManager(workspace.task.project.repoPath);
     const { sha } = await worktreeManager.merge(
       workspace.worktreePath,
-      workspace.task.project.mainBranch,
+      this.getBaseBranch(workspace),
       message ? { commitMessage: message } : undefined
     );
 

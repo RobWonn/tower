@@ -25,6 +25,7 @@ export {
   type AgentStatus,
   type AgentStatusPayload,
   type WorkspaceSetupProgressPayload,
+  type WorkspaceCommitMessageUpdatedPayload,
   type AckResponse,
   type ClientEventType,
   type ServerEventType,

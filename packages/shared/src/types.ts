@@ -147,6 +147,8 @@ export interface Workspace {
   taskId: string
   /** 分支名称 (对应 Prisma branchName) */
   branchName: string
+  /** 创建 workspace 时记录的基准分支 */
+  baseBranch?: string | null
   /** worktree 路径 (对应 Prisma worktreePath) */
   worktreePath: string
   status: WorkspaceStatus

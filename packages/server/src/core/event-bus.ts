@@ -21,6 +21,11 @@ type EventMap = {
     totalCommands: number;
     error?: string;
   };
+  'workspace:commit_message_updated': {
+    workspaceId: string;
+    taskId: string;
+    commitMessage: string | null;
+  };
 };
 
 type EventName = keyof EventMap;

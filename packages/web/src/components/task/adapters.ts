@@ -95,6 +95,13 @@ function hashStringToIndex(str: string, max: number): number {
   return Math.abs(hash) % max
 }
 
+function getPreferredWorkspace(
+  workspaces?: SharedWorkspace[],
+  workspace?: SharedWorkspace,
+): SharedWorkspace | undefined {
+  return workspace ?? workspaces?.find(w => w.status === 'ACTIVE') ?? workspaces?.[0]
+}
+
 /**
  * 将后端 Project 转为 UI 层 Project
  *
@@ -118,12 +125,11 @@ function extractActiveWorkspaceInfo(workspaces?: SharedWorkspace[]): {
   agent: string
   branch: string
 } {
-  if (!workspaces || workspaces.length === 0) {
+  const active = getPreferredWorkspace(workspaces)
+  if (!active) {
     return { agent: '—', branch: '—' }
   }
 
-  // 优先取 ACTIVE 状态的 workspace
-  const active = workspaces.find(w => w.status === 'ACTIVE') ?? workspaces[0]
   const branch = active.branchName
 
   // 从活跃 workspace 的最新 session 获取 agent 类型
@@ -170,9 +176,8 @@ export function adaptTaskForDetail(
   project: SharedProject,
   workspace?: SharedWorkspace,
 ): UITaskDetailData {
-  const branch = workspace?.branchName
-    ?? task.workspaces?.[0]?.branchName
-    ?? '—'
+  const activeWorkspace = getPreferredWorkspace(task.workspaces, workspace)
+  const branch = activeWorkspace?.branchName ?? '—'
 
   return {
     id: task.id,
@@ -182,7 +187,7 @@ export function adaptTaskForDetail(
     title: task.title,
     status: mapTaskStatusToUI(task.status),
     branch,
-    mainBranch: project.mainBranch ?? 'main',
+    mainBranch: activeWorkspace?.baseBranch ?? project.mainBranch ?? 'main',
     description: task.description ?? '',
   }
 }

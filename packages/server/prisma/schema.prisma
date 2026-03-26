@@ -48,6 +48,7 @@ model Workspace {
   taskId        String
   task          Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
   branchName    String
+  baseBranch    String?
   worktreePath  String
   status        String    @default("ACTIVE")
   commitMessage String?   // AI 生成的 commit message（合并时使用）

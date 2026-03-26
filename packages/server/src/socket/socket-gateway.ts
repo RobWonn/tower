@@ -122,6 +122,13 @@ export class SocketGateway {
       this.nsp.to(`task:${taskId}`).emit(ServerEvents.TASK_DELETED, payload);
       this.nsp.to(`project:${projectId}`).emit(ServerEvents.TASK_DELETED, payload);
     };
+    const onWorkspaceCommitMessageUpdated = (payload: {
+      workspaceId: string;
+      taskId: string;
+      commitMessage: string | null;
+    }) => {
+      this.nsp.to(`task:${payload.taskId}`).emit(ServerEvents.WORKSPACE_COMMIT_MESSAGE_UPDATED, payload);
+    };
 
     // --- Terminal events (new) ---
     const onTerminalStdout = ({ terminalId, data }: { terminalId: string; data: string }) => {
@@ -154,6 +161,7 @@ export class SocketGateway {
     this.eventBus.on('session:completed', onSessionCompleted);
     this.eventBus.on('task:updated', onTask);
     this.eventBus.on('task:deleted', onTaskDeleted);
+    this.eventBus.on('workspace:commit_message_updated', onWorkspaceCommitMessageUpdated);
     this.eventBus.on('terminal:stdout', onTerminalStdout);
     this.eventBus.on('terminal:exit', onTerminalExit);
     this.eventBus.on('workspace:setup_progress', onWorkspaceSetupProgress);
@@ -166,6 +174,7 @@ export class SocketGateway {
       () => this.eventBus.off('session:completed', onSessionCompleted),
       () => this.eventBus.off('task:updated', onTask),
       () => this.eventBus.off('task:deleted', onTaskDeleted),
+      () => this.eventBus.off('workspace:commit_message_updated', onWorkspaceCommitMessageUpdated),
       () => this.eventBus.off('terminal:stdout', onTerminalStdout),
       () => this.eventBus.off('terminal:exit', onTerminalExit),
       () => this.eventBus.off('workspace:setup_progress', onWorkspaceSetupProgress),

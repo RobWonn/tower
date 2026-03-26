@@ -6,7 +6,7 @@ import { TaskDetail } from '@/components/task/TaskDetail'
 import type { UITaskDetailData } from '@/components/task/types'
 import { UITaskStatus } from '@/components/task/types'
 import { toast } from 'sonner'
-import { adaptProject, adaptTaskForList, mapUIStatusToTask } from '@/components/task/adapters'
+import { adaptProject, adaptTaskForDetail, adaptTaskForList, mapTaskStatusToUI, mapUIStatusToTask } from '@/components/task/adapters'
 import { useProjects, useCreateProject } from '@/hooks/use-projects'
 import { useTasks, useCreateTask, useDeleteTask, useUpdateTaskStatus } from '@/hooks/use-tasks'
 import { useStartSession } from '@/hooks/use-sessions'
@@ -216,21 +216,30 @@ export function ProjectKanbanPage() {
   // === 选中的任务详情 ===
   const taskDetailData = useMemo<UITaskDetailData | null>(() => {
     if (!selectedTaskId) return null
-    const uiTask = uiTasks.find(t => t.id === selectedTaskId)
-    if (!uiTask) return null
-    const project = projects.find(p => p.id === uiTask.projectId)
-    return {
-      id: uiTask.id,
-      projectId: uiTask.projectId,
-      projectName: project?.name ?? 'Unknown',
-      projectColor: project?.color ?? 'text-neutral-500',
-      title: uiTask.title,
-      status: uiTask.status,
-      branch: uiTask.branch,
-      mainBranch: project?.mainBranch ?? 'main',
-      description: uiTask.description,
+    const task = rawTasks.find(t => t.id === selectedTaskId)
+    if (!task) return null
+
+    const project = projects.find(p => p.id === task.projectId)
+    if (!project) {
+      const branch = task.workspaces?.find(w => w.status === 'ACTIVE')?.branchName
+        ?? task.workspaces?.[0]?.branchName
+        ?? '—'
+
+      return {
+        id: task.id,
+        projectId: task.projectId,
+        projectName: 'Unknown',
+        projectColor: 'text-neutral-500',
+        title: task.title,
+        status: mapTaskStatusToUI(task.status),
+        branch,
+        mainBranch: 'main',
+        description: task.description ?? '',
+      }
     }
-  }, [selectedTaskId, uiTasks, projects])
+
+    return adaptTaskForDetail(task, project)
+  }, [selectedTaskId, rawTasks, projects])
 
   // === Mutations ===
   const createProject = useCreateProject()

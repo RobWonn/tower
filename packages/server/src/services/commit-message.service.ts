@@ -9,7 +9,7 @@
 import { prisma } from '../utils/index.js';
 import { AgentType, SessionStatus, SessionPurpose, WorkspaceStatus } from '../types/index.js';
 import { execGit } from '../git/git-cli.js';
-import { getSessionManager } from '../core/container.js';
+import { getEventBus, getSessionManager } from '../core/container.js';
 import type { NormalizedConversation } from '../output/index.js';
 import { sessionMsgStoreManager } from '../output/index.js';
 
@@ -17,6 +17,8 @@ import { sessionMsgStoreManager } from '../output/index.js';
 const MAX_DIFF_CHARS = 8000;
 
 export class CommitMessageService {
+  private eventBus = getEventBus();
+
   /**
    * 为指定 workspace 触发 commit message 生成。
    * 创建一个 purpose=COMMIT_MSG 的隐藏 session 并启动。
@@ -37,12 +39,13 @@ export class CommitMessageService {
     if (!workspace || workspace.status !== WorkspaceStatus.ACTIVE) return;
     if (!workspace.worktreePath) return;
 
-    // 确定 agent 类型：使用最近一个正常 session 的 agentType
+    // 继承最近一个正常 session 的执行上下文，确保与当前任务使用同一 provider
     const lastSession = workspace.sessions[0];
     if (!lastSession) return;
 
     const agentType = lastSession.agentType as AgentType;
     const variant = lastSession.variant ?? 'DEFAULT';
+    const providerId = lastSession.providerId ?? undefined;
 
     // 检查是否已有正在运行的 COMMIT_MSG session
     const existing = await prisma.session.findFirst({
@@ -59,6 +62,11 @@ export class CommitMessageService {
       where: { id: workspaceId },
       data: { commitMessage: null },
     });
+    this.eventBus.emit('workspace:commit_message_updated', {
+      workspaceId,
+      taskId: workspace.taskId,
+      commitMessage: null,
+    });
 
     // 构造 prompt
     const prompt = await this.buildPrompt(workspace);
@@ -66,7 +74,7 @@ export class CommitMessageService {
 
     // 创建隐藏 session 并启动
     const sessionManager = getSessionManager();
-    const session = await sessionManager.create(workspaceId, agentType, prompt, variant);
+    const session = await sessionManager.create(workspaceId, agentType, prompt, variant, providerId);
 
     // 标记为 COMMIT_MSG purpose
     await prisma.session.update({
@@ -105,6 +113,11 @@ export class CommitMessageService {
     await prisma.workspace.update({
       where: { id: session.workspaceId },
       data: { commitMessage },
+    });
+    this.eventBus.emit('workspace:commit_message_updated', {
+      workspaceId: session.workspaceId,
+      taskId: session.workspace.taskId,
+      commitMessage,
     });
 
     console.log(`[CommitMessageService] Cached commit message for workspace ${session.workspaceId}`);
@@ -165,26 +178,28 @@ export class CommitMessageService {
   private async buildPrompt(workspace: {
     worktreePath: string;
     branchName: string;
+    baseBranch?: string | null;
     task: {
       title: string;
       description: string | null;
       project: { repoPath: string; mainBranch: string };
     };
   }): Promise<string | null> {
-    const { worktreePath, branchName, task } = workspace;
+    const { worktreePath, branchName, baseBranch, task } = workspace;
     const { repoPath, mainBranch } = task.project;
+    const targetBranch = baseBranch || mainBranch;
 
     try {
       // 获取 commit log
       const commitLog = await execGit(repoPath, [
-        'log', `${mainBranch}..${branchName}`, '--oneline', '--no-decorate',
+        'log', `${targetBranch}..${branchName}`, '--oneline', '--no-decorate',
       ]).catch(() => '');
 
       if (!commitLog.trim()) return null; // 没有提交，无需生成
 
       // 获取 diff
       let diff = await execGit(repoPath, [
-        'diff', `${mainBranch}...${branchName}`,
+        'diff', `${targetBranch}...${branchName}`,
       ]).catch(() => '');
 
       // diff 截断策略
@@ -198,7 +213,7 @@ export class CommitMessageService {
       let diffStat = '';
       if (diffTruncated) {
         diffStat = await execGit(repoPath, [
-          'diff', '--stat', `${mainBranch}...${branchName}`,
+          'diff', '--stat', `${targetBranch}...${branchName}`,
         ]).catch(() => '');
       }
 
