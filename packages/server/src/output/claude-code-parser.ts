@@ -317,7 +317,13 @@ export class ClaudeCodeParser {
   private handleAssistantMessage(msg: ClaudeCodeMessage): void {
     if (!msg.message?.content) return
 
-    const messageId = msg.message.id
+    // 检测 --include-partial-messages 产生的 partial assistant 消息。
+    // partial 消息的 stop_reason 为 null，且 content 数组仅包含最新完成的 block，
+    // 导致 contentIndex 与 stream_event 的 event.index 不匹配。
+    // 对于 text/thinking，streaming 已实时展示，partial 消息无需重复处理。
+    const isPartialMessage = msg.message.stop_reason === null
+
+    const messageId = msg.message.id || msg.message_id
     const streamingState = messageId ? this.streamingMessages.get(messageId) : undefined
 
     for (let contentIndex = 0; contentIndex < msg.message.content.length; contentIndex++) {
@@ -336,9 +342,10 @@ export class ClaudeCodeParser {
           const entry = createAssistantMessage(block.text)
           const patch = replaceNormalizedEntry(existingIndex, entry)
           this.msgStore.pushPatch(patch)
-        } else if (!streamingState) {
-          // 仅当确实没走过 stream_event（streamingState 不存在）时才补建 entry
-          // streamingState 存在但 contentIndex 找不到时，说明 stream_event 已处理过，不应重复创建
+        } else if (!streamingState && !isPartialMessage) {
+          // 仅当确实没走过 stream_event 且不是 partial 消息时才补建 entry。
+          // partial 消息的 content 数组不完整（仅含最新 block），contentIndex 与
+          // stream event index 不匹配，会导致 lookup 失败而误创建重复 entry。
           const entry = createAssistantMessage(block.text)
           const index = this.indexProvider.next()
           const patch = addNormalizedEntry(index, entry)
@@ -350,8 +357,8 @@ export class ClaudeCodeParser {
           const entry = createThinking(block.thinking)
           const patch = replaceNormalizedEntry(existingIndex, entry)
           this.msgStore.pushPatch(patch)
-        } else if (!streamingState) {
-          // 同上：仅无 streaming state 时才补建
+        } else if (!streamingState && !isPartialMessage) {
+          // 同上：仅无 streaming state 且非 partial 时才补建
           const entry = createThinking(block.thinking)
           const index = this.indexProvider.next()
           const patch = addNormalizedEntry(index, entry)
@@ -360,10 +367,12 @@ export class ClaudeCodeParser {
       }
     }
 
-    // 清理已消费的 streaming state
-    if (messageId) {
-      this.streamingMessages.delete(messageId)
-    }
+    // 不在此处删除 streamingMessages。
+    // 由于启动参数包含 --include-partial-messages，同一个 message_id 可能产生多条
+    // assistant 消息（每完成一个 content block 就输出一次 partial message）。
+    // 保留 streaming state 让后续 partial 消息仍能找到已有 entry 进行 replace，
+    // 避免因查找失败而重复创建 entry。
+    // 清理时机：在 message_start 事件中，新消息开始时清理前一条消息的状态。
 
     // 提取 per-turn usage（每条 assistant 消息携带该轮的 usage）
     if (msg.message?.usage) {
@@ -619,6 +628,8 @@ export class ClaudeCodeParser {
         const messageId = event.message?.id
         if (messageId && this.streamingRole === 'assistant') {
           this.streamingMessageId = messageId
+          // 清理前一条消息的 streaming state，新消息开始意味着前一条已完成
+          this.streamingMessages.clear()
           this.streamingMessages.set(messageId, { role: 'assistant', contents: new Map() })
         } else {
           this.streamingMessageId = null
