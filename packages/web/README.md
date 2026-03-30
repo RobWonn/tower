@@ -1,73 +1,53 @@
-# React + TypeScript + Vite
+# `packages/web`
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Agent Tower 的前端应用，基于 React、Vite、TanStack Query、Zustand 和 Socket.IO Client 构建。
 
-Currently, two official plugins are available:
+## 主要职责
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- 展示项目与任务看板
+- 展示任务详情、日志流、Todo、token usage
+- 提供 workspace 工作台：编辑器、终端、Git changes、历史视图
+- 通过 REST API 读写数据
+- 通过 Socket.IO 订阅任务、会话、终端和工作区实时事件
 
-## React Compiler
+## 开发命令
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+pnpm --filter web dev
+pnpm --filter web build
+pnpm --filter web lint
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+默认情况下，前端通过 `VITE_API_URL` 访问后端；未配置时使用相对路径 `/api`。
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## 目录概览
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```text
+src/
+├── routes/        # 路由定义
+├── layouts/       # 页面布局
+├── pages/         # 看板页、设置页、demo 页
+├── components/
+│   ├── task/      # 任务列表、任务详情、启动 Agent 对话框
+│   ├── workspace/ # 编辑器、终端、Git 视图、历史视图
+│   ├── agent/     # 日志流、Todo、token usage
+│   └── ui/        # 通用 UI 组件
+├── hooks/         # TanStack Query hooks
+├── lib/
+│   ├── api-client.ts
+│   └── socket/    # Socket manager 与订阅 hooks
+└── stores/        # Zustand stores
 ```
+
+## 关键实现约定
+
+- 服务端状态优先走 TanStack Query
+- 客户端 UI 状态使用 Zustand
+- 应用启动时只建立一个 Socket 连接，各功能按需订阅 room
+- 共享类型与 Socket 事件定义来自 `@agent-tower/shared`
+
+## 相关文档
+
+- 根目录 `README.md`
+- `docs/ARCHITECTURE.md`
+- `docs/PROJECT_SPEC.md`

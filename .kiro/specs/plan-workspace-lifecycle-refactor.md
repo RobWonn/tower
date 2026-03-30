@@ -1,10 +1,12 @@
 # Workspace 生命周期重构计划
 
+> 状态：已完成。本文档保留为这次重构的历史方案记录；文中“当前流程 / 当前实现”均指重构前状态，不代表仓库当前行为。当前实现请以 `docs/ARCHITECTURE.md`、`docs/PROJECT_SPEC.md` 和实际代码为准。
+
 ## 背景
 
 ### 问题
 
-当前 Agent Tower 的 `WorktreeManager.merge()` 在 squash merge 后立即执行 `git worktree remove` + `git branch -D`，导致：
+重构前，Agent Tower 的 `WorktreeManager.merge()` 在 squash merge 后立即执行 `git worktree remove` + `git branch -D`，导致：
 
 1. 合并后无法在同一任务上继续工作（branch 被删了）
 2. Agent 进程退出时如果有未提交变更，worktree 是脏的，后续 merge/rebase 会失败
@@ -14,7 +16,7 @@
 
 通过分析 `example/vibe-kanban` 的 Rust 源码，发现其设计哲学与我们当前实现有重大差异：
 
-| 维度 | Agent Tower 当前 | vibe-kanban |
+| 维度 | Agent Tower（重构前） | vibe-kanban |
 |------|-----------------|-------------|
 | merge 后 branch | `git branch -D` 删除 | `git update-ref` 指向 merge commit，保留 |
 | merge 后 worktree | `git worktree remove` 立即删除 | 标记 archived，延迟清理 |
@@ -47,7 +49,7 @@
 
 ## 流程图
 
-### 当前流程（有问题）
+### 重构前流程（历史问题）
 
 ```
 用户启动 Agent

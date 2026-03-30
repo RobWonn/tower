@@ -1,352 +1,316 @@
 # Agent Tower - 架构设计文档
 
-## 1. 整体架构
+本文档描述当前代码库的真实架构，而不是早期规划稿。项目目前已经演进为一个本地优先、单用户的 AI Agent 调度平台，核心能力包括任务看板、Git worktree 隔离、实时终端/日志、Provider 管理、MCP 集成、附件、通知和移动端访问。
 
-### 1.1 架构概览
+## 1. 架构总览
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                           Agent Tower                                    │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │                    Frontend (React + Vite)                       │   │
-│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────────┐   │   │
-│  │  │  看板页  │ │ 任务详情 │ │ 终端面板 │ │   Git 操作面板   │   │   │
-│  │  └──────────┘ └──────────┘ └──────────┘ └──────────────────┘   │   │
-│  └─────────────────────────────────────────────────────────────────┘   │
-│                              │                                          │
-│                    REST API / WebSocket / SSE                           │
-│                              │                                          │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │                    Backend (Node.js + Fastify)                   │   │
-│  │                                                                  │   │
-│  │  ┌──────────────────────────────────────────────────────────┐   │   │
-│  │  │                      Routes Layer                         │   │   │
-│  │  │  /projects | /tasks | /workspaces | /sessions | /terminal │   │   │
-│  │  └──────────────────────────────────────────────────────────┘   │   │
-│  │                              │                                   │   │
-│  │  ┌──────────────────────────────────────────────────────────┐   │   │
-│  │  │                    Services Layer                         │   │   │
-│  │  │  ProjectService | TaskService | WorkspaceService | ...    │   │   │
-│  │  └──────────────────────────────────────────────────────────┘   │   │
-│  │                              │                                   │   │
-│  │  ┌────────────┐ ┌────────────┐ ┌────────────┐                  │   │
-│  │  │  Executors │ │ Git Manager│ │  Process   │                  │   │
-│  │  │ (AI 代理)  │ │ (Worktree) │ │  Manager   │                  │   │
-│  │  └────────────┘ └────────────┘ └────────────┘                  │   │
-│  │                              │                                   │   │
-│  │  ┌──────────────────────────────────────────────────────────┐   │   │
-│  │  │                  Database (SQLite + Prisma)               │   │   │
-│  │  └──────────────────────────────────────────────────────────┘   │   │
-│  └─────────────────────────────────────────────────────────────────┘   │
-│                              │                                          │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │                      AI Agent Executors                          │   │
-│  │         ┌────────────────┐       ┌────────────────┐             │   │
-│  │         │  Claude Code   │       │   Gemini CLI   │             │   │
-│  │         │   Executor     │       │    Executor    │             │   │
-│  │         └────────────────┘       └────────────────┘             │   │
-│  └─────────────────────────────────────────────────────────────────┘   │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
+### 1.1 系统图
+
+```text
+┌─────────────────────────────────────────────────────────────────────┐
+│                           Browser / Mobile                         │
+│  React Router ─ TanStack Query ─ Zustand ─ Socket.IO Client        │
+│  Task Kanban ─ Task Detail ─ Log Stream ─ Workspace Panel          │
+└──────────────────────────────┬──────────────────────────────────────┘
+                               │
+                    HTTP REST + Socket.IO (/events)
+                               │
+┌──────────────────────────────┴──────────────────────────────────────┐
+│                         Fastify Application                         │
+│  Routes ─ Services ─ EventBus ─ SocketGateway ─ MCP HTTP Client    │
+│                                                                    │
+│  ┌──────────────────────────────────────────────────────────────┐   │
+│  │ SessionManager + AgentPipeline                              │   │
+│  │ PTY stdout/stderr -> Parser -> MsgStore -> JSON Patch -> UI │   │
+│  └──────────────────────────────────────────────────────────────┘   │
+│                                                                    │
+│  Executors: Claude Code / Gemini CLI / Cursor Agent / Codex        │
+│  Git: WorktreeManager / git-cli / merge / rebase / conflict check  │
+│  Extras: Tunnel / Notifications / Attachments / Commit messages    │
+└──────────────────────────────┬──────────────────────────────────────┘
+                               │
+                     Prisma ORM + SQLite Database
 ```
 
 ### 1.2 技术栈
 
 | 层级 | 技术 | 说明 |
 |------|------|------|
-| **后端框架** | Fastify | 高性能，TypeScript 原生支持 |
-| **数据库** | SQLite + Prisma | 本地优先，类型安全 ORM |
-| **进程管理** | node-pty | 伪终端支持，处理交互式 CLI |
-| **Git 操作** | simple-git | 轻量级，Promise API |
-| **实时通信** | WebSocket + SSE | 终端交互 + 事件推送 |
-| **前端框架** | React 18 + Vite | 现代化开发体验 |
-| **状态管理** | Zustand + TanStack Query | 轻量 + 服务端状态缓存 |
-| **UI 组件库** | shadcn/ui + TailwindCSS | 可定制，基于 Radix UI |
-| **包管理** | pnpm | Monorepo 支持，磁盘效率高 |
+| 前端 | React 19 + Vite 7 + TypeScript 5 | 单页应用，按路由懒加载 |
+| 样式 | TailwindCSS v4 + shadcn/ui | UI 基础组件与样式系统 |
+| 状态管理 | TanStack Query v5 + Zustand v5 | 服务端状态缓存 + 客户端 UI 状态 |
+| 实时通信 | Socket.IO 4 | 基于 room 的实时订阅 |
+| 后端 | Fastify 4 | REST API、静态托管、生命周期钩子 |
+| 数据库 | Prisma 5 + SQLite | 本地优先，结构简单 |
+| 进程管理 | node-pty | 托管 AI CLI 和独立终端 |
+| Git | 原生 git CLI 封装 | worktree、rebase、merge、conflict 检测 |
+| 协议扩展 | MCP SDK | 暴露任务/会话/工作区工具给外部 agent |
+| 包管理 | pnpm monorepo | `shared/server/web` 三包结构 |
 
----
+## 2. Monorepo 结构
 
-## 2. 项目结构
+### 2.1 顶层结构
 
-### 2.1 Monorepo 根目录
-
-```
+```text
 agent-tower/
 ├── packages/
-│   ├── server/              # 后端服务
-│   └── web/                 # 前端应用
-├── docs/                    # 项目文档
-│   ├── PROJECT_SPEC.md      # 项目规格说明
-│   └── ARCHITECTURE.md      # 架构设计 (本文档)
-├── package.json             # Monorepo 根配置
-├── pnpm-workspace.yaml      # pnpm 工作空间配置
-├── tsconfig.json            # 根 TypeScript 配置
-├── .gitignore
-└── README.md
-```
-
-### 2.2 后端结构 (packages/server)
-
-```
-packages/server/
-├── src/
-│   ├── index.ts             # 应用入口
-│   ├── app.ts               # Fastify 应用配置
-│   │
-│   ├── routes/              # API 路由层
-│   │   ├── index.ts         # 路由注册
-│   │   ├── projects.ts      # 项目相关路由
-│   │   ├── tasks.ts         # 任务相关路由
-│   │   ├── workspaces.ts    # 工作空间相关路由
-│   │   ├── sessions.ts      # 会话相关路由
-│   │   └── system.ts        # 系统路由 (健康检查等)
-│   │
-│   ├── services/            # 业务逻辑层
-│   │   ├── project.service.ts
-│   │   ├── task.service.ts
-│   │   ├── workspace.service.ts
-│   │   └── session.service.ts
-│   │
-│   ├── executors/           # AI 代理执行器
-│   │   ├── index.ts         # 执行器注册与工厂
-│   │   ├── base.executor.ts # 执行器基类
-│   │   ├── claude-code.executor.ts
-│   │   └── gemini-cli.executor.ts
-│   │
-│   ├── git/                 # Git 操作模块
-│   │   └── worktree.manager.ts
-│   │
-│   ├── process/             # 进程管理模块
-│   │   └── process.manager.ts
-│   │
-│   ├── websocket/           # WebSocket 处理
-│   │   └── terminal.handler.ts
-│   │
-│   ├── events/              # SSE 事件推送
-│   │   └── event.emitter.ts
-│   │
-│   ├── types/               # 类型定义
-│   │   └── index.ts
-│   │
-│   └── utils/               # 工具函数
-│       └── index.ts
-│
-├── prisma/
-│   ├── schema.prisma        # 数据库模型定义
-│   └── migrations/          # 数据库迁移文件
-│
+│   ├── shared/   # 前后端共享类型、Socket 事件、日志适配、端口工具
+│   ├── server/   # Fastify + Prisma + Socket.IO + MCP
+│   └── web/      # React 前端
+├── docs/         # 项目文档
+├── design/       # 设计稿与实验性资料
+├── scripts/      # 构建/发布脚本
 ├── package.json
-├── tsconfig.json
-└── .env.example             # 环境变量示例
+└── pnpm-workspace.yaml
 ```
 
-### 2.3 前端结构 (packages/web)
+### 2.2 `packages/shared`
 
-```
-packages/web/
-├── src/
-│   ├── main.tsx             # 应用入口
-│   ├── App.tsx              # 根组件
-│   │
-│   ├── pages/               # 页面组件
-│   │   ├── ProjectList.tsx  # 项目列表页
-│   │   ├── ProjectKanban.tsx # 项目看板页
-│   │   └── NotFound.tsx     # 404 页面
-│   │
-│   ├── components/          # UI 组件
-│   │   ├── ui/              # shadcn/ui 基础组件
-   │   │   ├── button.tsx
-│   │   │   ├── card.tsx
-│   │   │   ├── dialog.tsx
-│   │   │   └── ...
-│   │   │
-│   │   ├── layout/          # 布局组件
-│   │   │   ├── Header.tsx
-│   │   │   ├── Sidebar.tsx
-│   │   │   └── Layout.tsx
-│   │   │
-│   │   ├── kanban/          # 看板相关组件
-│   │   │   ├── KanbanBoard.tsx
-│   │   │   ├── KanbanColumn.tsx
-│   │   │   └── KanbanCard.tsx
-│   │   │
-│   │   ├── task/            # 任务相关组件
-│   │   │   ├── TaskDetail.tsx
-│   │   │   ├── TaskForm.tsx
-│   │   │   └── TaskStatusBadge.tsx
-│   │   │
-│   │   ├── terminal/        # 终端相关组件
-│   │   │   └── Terminal.tsx
-│   │   │
-│   │   └── git/             # Git 相关组件
-│   │       ├── DiffViewer.tsx
-│   │       └── MergePanel.tsx
-│   │
-│   ├── hooks/               # 自定义 Hooks
-│   │   ├── useProjects.ts   # 项目数据 hook
-│   │   ├── useTasks.ts      # 任务数据 hook
-│   │   ├── useWorkspaces.ts # 工作空间数据 hook
-│   │   ├── useSessions.ts   # 会话数据 hook
-│   │   └── useTerminal.ts   # 终端 WebSocket hook
-│   │
-│   ├── stores/              # Zustand 状态管理
-│   │   └── ui.store.ts      # UI 状态 (侧边栏、模态框等)
-│   │
-│   ├── api/                 # API 客户端
-│   │   ├── client.ts        # HTTP 客户端配置
-│   │   ├── projects.ts      # 项目 API
-│   │   ├── tasks.ts         # 任务 API
-│   │   ├── workspaces.ts    # 工作空间 API
-│   │   └── sessions.ts      # 会话 API
-│   │
-│   ├── types/               # 类型定义
-│   │   └── index.ts
-│   │
-│   ├── lib/                 # 工具库
-│   │   └── utils.ts         # 通用工具函数
-│   │
-│   └── styles/              # 样式文件
-│       └── globals.css      # 全局样式 + Tailwind
-│
-├── public/                  # 静态资源
-│   └── favicon.ico
-│
-├── index.html
-├── package.json
-├── tsconfig.json
-├── vite.config.ts
-├── tailwind.config.js
-├── postcss.config.js
-└── components.json          # shadcn/ui 配置
+`shared` 负责跨端约定，避免前后端复制类型或事件定义。
+
+- `src/types.ts`: `Project`、`Task`、`Workspace`、`Session`、`Provider` 等核心类型
+- `src/socket/events.ts`: Socket.IO 事件名与 payload 类型
+- `src/log-adapter.ts`: 规范化日志到前端展示数据的转换
+- `src/dev-port.ts`: 基于目录路径 hash 的开发端口计算
+
+### 2.3 `packages/server`
+
+后端按职责分层，但已经比传统的 `routes/services` 更丰富：
+
+- `src/routes/`: REST API 路由注册与参数校验
+- `src/services/`: 项目、任务、工作区、会话、终端、通知、隧道等业务逻辑
+- `src/core/`: 轻量容器与进程内 `EventBus`
+- `src/pipeline/`: `AgentPipeline`，负责单个 session 的 PTY 生命周期
+- `src/output/`: agent 输出解析、`MsgStore`、JSON Patch、Todo/Token 提取
+- `src/executors/`: Claude Code、Gemini CLI、Cursor Agent、Codex 执行器，以及 provider/profile 管理
+- `src/socket/`: Socket.IO namespace、room 转发、订阅协议
+- `src/git/`: worktree、merge、rebase、冲突状态和 git 错误封装
+- `src/mcp/`: MCP server 与 tool 注册
+
+### 2.4 `packages/web`
+
+前端围绕“看板 + 任务详情 + 工作区”组织：
+
+- `src/routes/`: 路由定义，按页面懒加载
+- `src/layouts/`: 根布局、设置页布局
+- `src/pages/`: 首页看板、设置页、demo 页
+- `src/components/task/`: 任务列表、任务详情、启动 agent 对话框
+- `src/components/workspace/`: 编辑器、变更视图、终端、Git 操作、历史视图
+- `src/components/agent/`: 日志流、Todo 面板、Token 用量
+- `src/hooks/`: TanStack Query hooks
+- `src/lib/socket/`: Socket 连接管理与订阅 hooks
+- `src/stores/`: UI 状态与 agent 状态
+
+## 3. 核心业务模型
+
+### 3.1 实体关系
+
+当前核心模型为：
+
+```text
+Project
+  └── Task
+        └── Workspace (git worktree)
+              └── Session
+                    └── ExecutionProcess
 ```
 
----
+补充模型：
 
-## 3. 分层职责
+- `Provider`: 配置不同 agent CLI 的环境变量、设置和默认项
+- `Attachment`: 上传文件，既能在前端预览，也能拼接进 prompt
+- `NotificationSettings`: OS 通知与飞书 webhook 配置
 
-### 3.1 后端分层
+### 3.2 状态流转
 
-| 层级 | 职责 | 示例 |
-|------|------|------|
-| **Routes** | 请求处理、参数校验、响应格式化 | 接收 POST /api/tasks，校验参数，调用 service |
-| **Services** | 业务逻辑、数据库操作、事务管理 | 创建任务、更新状态、关联工作空间 |
-| **Executors** | AI 代理的启动、交互、生命周期管理 | 启动 Claude Code 进程，发送 prompt |
-| **Git** | Git 仓库操作、Worktree 管理 | 创建分支、获取 diff、合并代码 |
-| **Process** | 进程管理、PTY 交互 | 管理子进程、处理 stdin/stdout |
+- `Task`: `TODO -> IN_PROGRESS -> IN_REVIEW -> DONE/CANCELLED`
+- `Workspace`: `ACTIVE -> MERGED/ABANDONED`
+- `Session`: `PENDING -> RUNNING -> COMPLETED/FAILED/CANCELLED`
 
-### 3.2 前端分层
+后端会自动处理一部分状态：
 
-| 层级 | 职责 | 示例 |
-|------|------|------|
-| **Pages** | 页面级组件、路由入口 | ProjectKanban 页面 |
-| **Components** | 可复用 UI 组件 | KanbanCard、TaskForm |
-| **Hooks** | 数据获取、状态逻辑封装 | useTasks 封装任务 CRUD |
-| **Stores** | 全局 UI 状态管理 | 侧边栏展开状态、当前选中任务 |
-| **API** | HTTP 请求封装 | 调用后端 REST API |
+- Session 启动时，任务自动回到 `IN_PROGRESS`
+- 一个任务下所有聊天 session 结束后，任务自动推进到 `IN_REVIEW`
+- Workspace 成功 squash merge 后，任务推进到 `DONE`
 
----
+## 4. 运行时执行链路
 
-## 4. 通信机制
+### 4.1 创建并启动任务
 
-### 4.1 REST API
+典型流程如下：
 
-用于常规的 CRUD 操作：
+1. 前端创建 `Task`
+2. 后端创建 `Workspace`，生成或复用 git worktree
+3. 根据项目配置复制文件、异步执行 setup script
+4. 前端创建 `Session`
+5. `SessionManager` 根据 `providerId` 或 `agentType` 选择 executor
+6. executor 在 worktree 目录中启动对应 AI CLI
+7. `AgentPipeline` 接管 PTY、parser 和消息同步
 
-```
-GET    /api/projects           # 获取项目列表
-POST   /api/projects           # 创建项目
-GET    /api/tasks/:id          # 获取任务详情
-PATCH  /api/tasks/:id/status   # 更新任务状态
-...
-```
+### 4.2 Session Pipeline
 
-### 4.2 WebSocket
+每个 session 都由一个 `AgentPipeline` 管理：
 
-用于终端实时交互：
-
-```
-/ws/terminal/:sessionId
-
-客户端 → 服务端: { type: "input", data: "ls -la\n" }
-服务端 → 客户端: { type: "output", data: "total 24\n..." }
+```text
+PTY.onData
+  -> MsgStore.pushStdout()
+  -> Parser.processData()
+  -> MsgStore.pushPatch()
+  -> EventBus.emit('session:patch')
+  -> SocketGateway 转发到 session room
+  -> 前端增量更新日志 / Todo / token usage
 ```
 
-### 4.3 SSE (Server-Sent Events)
+关键点：
 
-用于服务端事件推送：
+- `MsgStore` 保存 stdout、patch、sessionId 等消息，并能重建快照
+- 快照会被 debounce 持久化到数据库的 `logSnapshot`
+- parser 会尽量把原始终端输出结构化为标准化消息
+- 当前主要对 Claude Code、Cursor Agent、Codex 做了结构化解析；Gemini 主要按原始输出处理
 
-```
-GET /api/events
+### 4.3 Session 结束后的后处理
 
-事件类型:
-- task:status_changed    # 任务状态变更
-- session:started        # 会话启动
-- session:completed      # 会话完成
-- workspace:created      # 工作空间创建
-```
+普通聊天 session 结束后，后端会自动执行：
 
----
+1. 尝试对 worktree 中未提交变更做兜底 auto-commit
+2. 持久化日志快照和 token usage
+3. 广播 `session:completed`
+4. 检查任务是否应进入 `IN_REVIEW`
+5. 触发 commit message 的后台生成
 
-## 5. 设计决策
+## 5. Git 与工作区设计
 
-### 5.1 为什么不使用共享包 (shared package)？
+### 5.1 Worktree 隔离
 
-**决策**: 第一版暂不创建 `packages/shared`
+每个任务默认使用独立分支和独立目录，例如：
 
-**理由**:
-- 项目初期，前后端类型定义变化频繁
-- 共享包增加构建复杂度和依赖管理成本
-- 当前规模下，类型重复的成本可接受
-- 后续如有明确需求，可以再抽取
+- 分支名：`at/<workspace-short-id>`
+- 工作目录：仓库旁边的 `.worktrees/<branch>`
 
-### 5.2 为什么选择按职责分层而非按领域分层？
+这样多个 agent 可以同时修改同一个项目，而不直接污染主工作区。
 
-**决策**: 后端采用 `routes/services/executors` 的职责分层
+### 5.2 当前 Git 能力
 
-**理由**:
-- 项目规模中等，领域边界清晰
-- 职责分层更直观，新成员容易理解
-- 避免过度设计，保持简单
-- 如果后续模块增多，可以逐步迁移到领域分层
+`WorktreeManager` 当前负责：
 
-### 5.3 为什么前端组件按类型分组？
+- 创建和删除 worktree
+- 获取分支领先/落后状态
+- 获取 diff 和 diff stat
+- squash merge 到目标分支
+- rebase 到最新 base branch
+- 检测 merge/rebase 冲突
+- 中止进行中的 git 操作
+- 启动时 prune 过期 worktree 引用
 
-**决策**: 采用 `components/hooks/stores` 的类型分组
+### 5.3 合并策略
 
-**理由**:
-- 组件数量预计在 30-50 个，类型分组足够清晰
-- 避免过深的目录嵌套
-- shadcn/ui 组件统一放在 `components/ui/` 下，便于管理
+当前 merge 不是直接把 task branch 合并回主分支，而是：
 
----
+1. 检查 worktree 是否干净
+2. 检查 task branch 是否落后 base branch
+3. 在主仓库执行 `git merge --squash --no-commit`
+4. 用用户输入或 AI 生成的 commit message 提交
+5. 更新 task branch ref 到新的 squash commit
+6. 删除 worktree 目录，但保留 branch 以便未来继续工作
 
-## 6. 文件命名规范
+这使“已合并任务继续迭代”成为可能。
 
-### 6.1 后端
+## 6. 通信机制
 
-| 类型 | 命名规范 | 示例 |
-|------|----------|------|
-| 路由文件 | `{resource}.ts` | `projects.ts`, `tasks.ts` |
-| 服务文件 | `{resource}.service.ts` | `project.service.ts` |
-| 执行器文件 | `{agent-name}.executor.ts` | `claude-code.executor.ts` |
-| 类型文件 | `index.ts` 或 `{domain}.types.ts` | `index.ts` |
+### 6.1 REST API
 
-### 6.2 前端
+REST API 负责 CRUD、文件访问和控制型操作，当前主要分组包括：
 
-| 类型 | 命名规范 | 示例 |
-|------|----------|------|
-| 页面组件 | `PascalCase.tsx` | `ProjectKanban.tsx` |
-| UI 组件 | `PascalCase.tsx` | `KanbanCard.tsx` |
-| Hooks | `use{Name}.ts` | `useTasks.ts` |
-| Stores | `{name}.store.ts` | `ui.store.ts` |
-| API 文件 | `{resource}.ts` | `tasks.ts` |
+- `projects`
+- `tasks`
+- `workspaces`
+- `sessions`
+- `git`
+- `files` / `filesystem`
+- `providers` / `profiles`
+- `terminals`
+- `attachments`
+- `notifications`
+- `tunnel`
+- `system`
 
----
+### 6.2 Socket.IO
+
+实时层统一使用 `/events` namespace，而不是独立的 WS/SSE 通道。订阅以 room 为单位：
+
+- `session:{id}` / `session:all`
+- `task:{id}` / `task:all`
+- `project:{id}` / `project:all`
+- `terminal:{id}` / `terminal:all`
+- `agent:{id}` / `agent:all`
+
+主要事件：
+
+- `session:stdout`
+- `session:patch`
+- `session:exit`
+- `session:completed`
+- `task:updated`
+- `task:deleted`
+- `terminal:stdout`
+- `workspace:setup_progress`
+- `workspace:commit_message_updated`
+
+### 6.3 MCP
+
+MCP server 是独立的 stdio 进程，通过 HTTP 调用 Agent Tower 后端。它不直接访问数据库，而是复用现有 REST API 和业务规则。
+
+当前已暴露项目、任务、provider、workspace、session 相关 tools，并支持在 worktree 目录下提供 `get_context`。
+
+## 7. 关键设计决策
+
+### 7.1 使用 `packages/shared` 统一约定
+
+项目已采用共享包维护：
+
+- 领域类型
+- Socket 事件定义
+- 日志适配逻辑
+- 开发端口计算逻辑
+
+这样前后端可以共享一套契约，减少手写同步成本。
+
+### 7.2 Prisma 使用字符串字段承载状态枚举
+
+数据库中的 `status`、`agentType`、`purpose` 等字段多数为 `String`，而不是 Prisma enum。枚举约束主要放在 TypeScript 层。
+
+优点：
+
+- 迁移成本更低
+- 与历史数据兼容更容易
+- 更方便新增 agent 类型或状态
+
+### 7.3 Room-based Socket 架构
+
+前端应用启动时只建立一个 socket 连接，各页面和 hook 再按需订阅 room。这样可以避免为每个 session/terminal 建立独立连接，也更适合同时观察多个任务。
+
+### 7.4 本地优先 + 隧道远程访问
+
+项目默认是单用户、本地运行：
+
+- 数据库存放在本机
+- Git 操作直接作用于本地仓库
+- agent CLI 直接在本机执行
+
+远程访问通过 Cloudflare tunnel 暴露，并配套 token 认证，而不是完整的多用户鉴权系统。
+
+## 8. 仍然存在的边界
+
+以下能力当前仍非完整产品目标，文档中不应误写为已实现：
+
+- 多用户协作与权限系统
+- 云端托管的任务执行
+- PR 工作流和 GitHub 审核集成
+- 通用预览面板（`Preview` 仍是占位）
+- 完整的领域模块化拆分
 
 ## 更新记录
 
 | 日期 | 版本 | 说明 |
 |------|------|------|
-| 2025-02-04 | v0.1 | 初始版本，确定项目结构和分层设计 |
+| 2026-03-30 | v0.2 | 基于当前代码实现重写，补齐 shared、Socket.IO、provider、pipeline、MCP、附件、通知与 Git 工作流 |

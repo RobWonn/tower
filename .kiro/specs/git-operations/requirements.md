@@ -13,7 +13,7 @@
 - **ConflictBanner**: 前端冲突提示横幅组件，展示冲突状态和操作按钮
 - **ResolveConflictsDialog**: 前端冲突解决对话框组件，让用户选择解决方式（AI 辅助或手动）
 - **InstructionBuilder**: 冲突解决指令生成器，根据冲突上下文生成结构化的 AI Agent 指令
-- **EventBus**: 服务端事件总线，通过 SSE 向前端推送实时事件
+- **EventBus**: 服务端事件总线，通过 Socket.IO room 广播把实时事件转发给前端
 - **Session**: AI Agent 的一次执行会话，可接收 follow-up 指令
 
 ## 需求

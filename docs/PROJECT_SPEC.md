@@ -1,663 +1,243 @@
 # Agent Tower - 项目规格文档
 
-## 1. 项目概述
+本文档描述 Agent Tower 当前产品范围、核心用户流程和主要能力边界，作为“项目现在是什么”的说明，而不是最初的立项草案。
 
-### 1.1 项目目标
+## 1. 产品定位
 
-构建一个类似看板的 Web 应用，用于管理本地 AI Agent（如 Claude Code、Gemini CLI）执行的开发任务。通过可视化界面统一管理多个 AI 代理的任务分配、执行状态和代码产出。
+Agent Tower 是一个本地优先的 AI Agent 任务管理面板，用来把多个 coding agent 的执行过程集中到一个界面中管理。
 
-### 1.2 核心需求
+它解决的问题包括：
 
-| 需求项 | 说明 |
-|--------|------|
-| AI Agent 支持 | 首期支持 Claude Code 和 Gemini CLI |
-| 任务管理模式 | 看板视图（TODO → IN_PROGRESS → IN_REVIEW → DONE） |
-| Git 集成 | Worktree 隔离，每个任务独立分支 |
-| 部署方式 | Web 服务 |
-| 用户模式 | 单用户（暂不实现多用户协作） |
+- 多个 agent 同时跑任务时，终端窗口和上下文容易失控
+- 多任务同时改同一个仓库时，容易互相踩文件
+- 需要从手机远程查看任务进度，而不是一直守在电脑前
+- 不同任务适合不同 provider，希望能按任务切换成本和能力
+- 需要把 agent 的运行日志、代码变更、待办、token 用量、合并流程集中在一起
 
-### 1.3 参考项目
+## 2. 目标用户
 
-参考 `vibe-kanban` 项目的设计理念和功能实现，但使用 Node.js 技术栈重新构建。
+当前主要面向以下用户：
 
----
+- 在本地机器上同时运行多个 AI coding agent 的个人开发者
+- 需要把 Claude Code、Gemini CLI、Cursor Agent、Codex 混合使用的人
+- 希望把 AI 任务从“一个个终端窗口”升级为“可审阅、可恢复、可并行”的工作流的人
 
-## 2. 参考项目分析 (vibe-kanban)
+当前产品默认是单用户模式，不以团队协作或云端多租户为目标。
 
-### 2.1 vibe-kanban 技术栈
+## 3. 核心业务对象
 
-| 层级 | 技术 |
-|------|------|
-| 后端 | Rust + Axum |
-| 数据库 | SQLite + SQLx |
-| 前端 | React + Vite + TailwindCSS |
-| 状态管理 | Zustand + React Query + TanStack React DB |
-| 实时通信 | WebSocket + SSE |
+### 3.1 数据模型
 
-### 2.2 vibe-kanban 核心架构
+系统围绕以下对象组织：
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                           vibe-kanban 架构                               │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  Frontend (React)                                                       │
-│  ├── Pages (看板、工作空间、设置)                                         │
-│  ├── Components (UI 组件)                                               │
-│  ├── Hooks (80+ 自定义 hooks)                                           │
-│  └── State (Zustand + React Query)                                      │
-│                              │                                          │
-│                    REST / WebSocket / SSE                               │
-│                              │                                          │
-│  Backend (Rust + Axum)                                                  │
-│  ├── Routes (API 路由层)                                                │
-│  ├── Services (业务逻辑层)                                              │
-│  ├── Executors (AI 代理执行器 - 9种)                                    │
-│  ├── Git (worktree 管理)                                                │
-│  └── MCP Server (Model Context Protocol)                                │
-│                              │                                          │
-│  Database (SQLite)                                                      │
-│  └── Models: Project, Task, Workspace, Session, ExecutionProcess        │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
+```text
+Project -> Task -> Workspace -> Session -> ExecutionProcess
 ```
 
-### 2.3 vibe-kanban 数据模型关系
-
-```
-Project (项目)
-    │
-    └── 1:n ── Task (任务)
-                  │
-                  ├── n:n ── Tag (标签)
-                  ├── 1:n ── Image (图片附件)
-                  │
-                  └── 1:n ── Workspace (工作空间/git worktree)
-                                │
-                                └── 1:n ── Session (会话)
-                                              │
-                                              └── 1:n ── ExecutionProcess (执行进程)
-                                                            │
-                                                            └── 1:n ── CodingAgentTurn (对话轮次)
-```
-
-### 2.4 vibe-kanban 任务执行流程
-
-```
-1. 创建任务 (Task)
-       │
-       ▼
-2. 创建工作空间 (Workspace)
-   - 创建 Git worktree
-   - 创建独立分支
-   - 运行 setup script
-       │
-       ▼
-3. 启动会话 (Session)
-   - 选择 AI 代理 (Claude Code, Cursor, Gemini 等)
-   - 配置 MCP 服务器
-       │
-       ▼
-4. 执行进程 (Execution Process)
-   - 启动 AI 代理进程
-   - 捕获 stdout/stderr
-   - 实时日志流推送
-       │
-       ▼
-5. 代码审查 & 合并
-   - 查看 diff
-   - 创建 PR 或直接合并
-   - 清理 worktree
-```
-
-### 2.5 vibe-kanban 支持的 AI 代理
-
-| 代理 | 说明 |
-|------|------|
-| Claude Code | Anthropic 的 CLI 编码助手 |
-| Cursor Agent | Cursor IDE 的 AI 代理 |
-| Gemini CLI | Google 的 Gemini CLI |
-| Codex | OpenAI Codex |
-| Copilot | GitHub Copilot |
-| Amp | Amp 编码助手 |
-| Opencode | Opencode |
-| QwenCode | 阿里 Qwen Code |
-| Droid | Droid |
-
----
-
-## 3. 新项目技术方案
-
-### 3.1 技术栈选型
-
-| 层级 | 技术 | 选择理由 |
-|------|------|----------|
-| **后端框架** | Fastify | 高性能，TypeScript 原生支持，插件生态丰富 |
-| **数据库** | SQLite + Prisma | 本地优先，类型安全 ORM，迁移管理方便 |
-| **进程管理** | node-pty | 伪终端支持，可处理交互式 CLI |
-| **Git 操作** | simple-git | 轻量级，Promise API，功能完整 |
-| **实时通信** | WebSocket (ws) + SSE | 终端交互 + 事件推送 |
-| **前端框架** | React 18 + Vite | 现代化，开发体验好 |
-| **状态管理** | Zustand + TanStack Query | 轻量 + 服务端状态缓存 |
-| **UI 组件库** | shadcn/ui + TailwindCSS | 可定制性强，基于 Radix UI |
-| **包管理** | pnpm | Monorepo 支持好，磁盘效率高 |
-
-### 3.2 系统架构图
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                        AI Agent 任务管理面板                             │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │                    Frontend (React + Vite)                       │   │
-│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────────┐   │   │
-│  │  │  看板页  │ │ 任务详情 │ │ 终端面板 │ │   Git 操作面板   │   │   │
-│  │  └──────────┘ └──────────┘ └──────────┘ └──────────────────┘   │   │
-│  └─────────────────────────────────────────────────────────────────┘   │
-│                              │                                          │
-│                    REST API / WebSocket / SSE                           │
-│                              │                                          │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │                    Backend (Node.js + Fastify)                   │   │
-│  │                                                                  │   │
-│  │  ┌──────────────────────────────────────────────────────────┐   │   │
-│  │  │                      Routes Layer                         │   │   │
-│  │  │  /projects | /tasks | /workspaces | /sessions | /terminal │   │   │
-│  │  └──────────────────────────────────────────────────────────┘   │   │
-│  │                              │                                   │   │
-│  │  ┌──────────────────────────────────────────────────────────┐   │   │
-│  │  │                    Services Layer                         │   │   │
-│  │  │  ProjectService | TaskService | WorkspaceService | ...    │   │   │
-│  │  └─────────────────────────────────────────────────────────┘   │   │
-│  │                              │                                   │   │
-│  │  ┌────────────┐ ┌────────────┐ ┌────────────┐                  │   │
-│  │  │  Executors │ │ Git Manager│ │  Process   │                  │   │
-│  │  │ (AI 代理)  │ │ (Worktree) │ │  Manager   │                  │   │
-│  │  └────────────┘ └────────────┘ └────────────┘                  │   │
-│  │                              │                                   │   │
-│  │  ┌──────────────────────────────────────────────────────────┐   │   │
-│  │  │                  Database (SQLite + Prisma)               │   │   │
-│  │  └──────────────────────────────────────────────────────────┘   │   │
-│  └─────────────────────────────────────────────────────────────────┘   │
-│                              │                                          │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │                      AI Agent Executors                          │   │
-│  │         ┌────────────────┐       ┌────────────────┐             │   │
-│  │         │  Claude Code   │       │   Gemini CLI   │             │   │
-│  │         │   Executor     │       │    Executor    │             │   │
-│  │         └────────────────┘       └────────────────┘             │   │
-│  └─────────────────────────────────────────────────────────────────┘   │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
-```
-
-### 3.3 目录结构
-
-```
-agent-tower/
-├── packages/
-│   ├── server/                    # 后端服务
-│   │   ├── src/
-│   │   │   ├── index.ts           # 入口
-│   │   │   ├── app.ts             # Fastify 应用配置
-│   │   │   ├── routes/            # API 路由
-│   │   │   │   ├── projects.ts
-│   │   │   │   ├── tasks.ts
-│   │   │   │   ├── workspaces.ts
-│   │   │   │   ├── sessions.ts
-│   │   │   │   └── terminal.ts
-│   │   │   ├── services/          # 业务逻辑
-│   │   │   │   ├── project.service.ts
-│   │   │   │   ├── task.service.ts
-│   │   │   │   ├── workspace.service.ts
-│   │   │   │   └── session.service.ts
-│   │   │   ├── executors/         # AI 代理执行器
-│   │   │   │   ├── base.executor.ts
-│   │   │   │   ├── claude-code.executor.ts
-│   │   │   │   └── gemini-cli.executor.ts
-│   │   │   ├── git/               # Git 操作
-│   │   │   │   └── worktree.manager.ts
-│   │   │   ├── process/           # 进程管理
-│   │   │   │   └── process.manager.ts
-│   │   │   └── types/             # 类型定义
-│   │   │       └── index.ts
-│   │   ├── prisma/
-│   │   │   ├── schema.prisma      # 数据库模型
-│   │   │   └── migrations/        # 迁移文件
-│   │   ├── package.json
-│   │   └── tsconfig.json
-│   │
-│   └── web/                       # 前端应用
-│       ├── src/
-│       │   ├── main.tsx           # 入口
-│       │   ├── App.tsx            # 根组件
-│       │   ├── components/        # UI 组件
-│       │   │   ├── Kanban/
-│       │   │   │   ├── KanbanBoard.tsx
-│       │   │   │   ├── KanbanColumn.tsx
-│       │   │   │   └── KanbanCard.tsx
-│       │   │   ├── Task/
-│       │   │   │   ├── TaskDetail.tsx
-│       │   │   │   └── TaskForm.tsx
-│       │   │   ├── Terminal/
-│       │   │   │   └── Terminal.tsx
-│       │   │   └── Git/
-│       │   │       ├── DiffViewer.tsx
-│       │   │       └── MergePanel.tsx
-│       │   ├── pages/             # 页面
-│       │   │   ├── ProjectList.tsx
-│       │   │   └── ProjectKanban.tsx
-│       │   ├── hooks/             # 自定义 Hooks
-│       │   │   ├── useProjects.ts
-│       │   │   ├── useTasks.ts
-│       │   │   └── useTerminal.ts
-│       │   ├── stores/            # Zustand stores
-│       │   │   └── uiStore.ts
-│       │   ├── api/               # API 客户端
-│       │   │   └── client.ts
-│       │   └── types/             # 类型定义
-│       │       └── index.ts
-│       ├── package.json
-│       ├── vite.config.ts
-│       └── tsconfig.json
-│
-├── package.json                   # Monorepo 根配置
-├── pnpm-workspace.yaml
-├── tsconfig.json                  # 根 TypeScript 配置
-└── docs/
-    └── PROJECT_SPEC.md            # 本文档
-```
-
-### 3.4 数据模型设计
-
-```prisma
-// packages/server/prisma/schema.prisma
-
-generator client {
-  provider = "prisma-client-js"
-}
-
-datasource db {
-  provider = "sqlite"
-  url      = "file:./data.db"
-}
-
-// 项目
-model Project {
-  id          String      @id @default(uuid())
-  name        String
-  description String?
-  repoPath    String      // Git 仓库绝对路径
-  mainBranch  String      @default("main")
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-  tasks       Task[]
-}
-
-// 任务
-model Task {
-  id          String      @id @default(uuid())
-  title       String
-  description String?     // 任务描述/需求
-  status      TaskStatus  @default(TODO)
-  priority    Int         @default(0)  // 数字越大优先级越高
-  position    Int         @default(0)  // 看板中的排序位置
-  projectId   String
-  project     Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  workspaces  Workspace[]
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-
-  @@index([projectId])
-  @@index([status])
-}
-
-enum TaskStatus {
-  TODO
-  IN_PROGRESS
-  IN_REVIEW
-  DONE
-}
-
-// 工作空间 (对应一个 git worktree)
-model Workspace {
-  id           String      @id @default(uuid())
-  taskId       String
-  task         Task        @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  branchName   String      // 分支名称
-  worktreePath String      // Worktree 绝对路径
-  status       WorkspaceStatus @default(ACTIVE)
-  sessions     Session[]
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
-
-  @@index([taskId])
-}
-
-enum WorkspaceStatus {
-  ACTIVE
-  MERGED
-  ABANDONED
-}
-
-// 会话 (一次 AI 代理执行)
-model Session {
-  id          String        @id @default(uuid())
-  workspaceId String
-  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  agentType   AgentType
-  prompt      String        // 发送给 AI 的提示
-  status      SessionStatus @default(PENDING)
-  processes   ExecutionProcess[]
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
-
-  @@index([workspaceId])
-}
-
-enum AgentType {
-  CLAUDE_CODE
-  GEMINI_CLI
-}
-
-enum SessionStatus {
-  PENDING
-  RUNNING
-  COMPLETED
-  FAILED
-  CANCELLED
-}
-
-// 执行进程
-model ExecutionProcess {
-  id          String      @id @default(uuid())
-  sessionId   String
-  session     Session     @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  pid         Int?        // 进程 ID
-  exitCode    Int?        // 退出码
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-
-  @@index([sessionId])
-}
-
-// 执行日志 (单独存储，避免主表过大)
-model ExecutionLog {
-  id        String   @id @default(uuid())
-  processId String
-  content   String   // 日志内容
-  timestamp DateTime @default(now())
-
-  @@index([processId])
-}
-```
-
-### 3.5 API 设计
-
-#### 3.5.1 RESTful API 端点
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| **Projects** | | |
-| GET | /api/projects | 获取项目列表 |
-| POST | /api/projects | 创建项目 |
-| GET | /api/projects/:id | 获取项目详情 |
-| PUT | /api/projects/:id | 更新项目 |
-| DELETE | /api/projects/:id | 删除项目 |
-| **Tasks** | | |
-| GET | /api/projects/:projectId/tasks | 获取项目任务列表 |
-| POST | /api/projects/:projectId/tasks | 创建任务 |
-| GET | /api/tasks/:id | 获取任务详情 |
-| PUT | /api/tasks/:id | 更新任务 |
-| PATCH | /api/tasks/:id/status | 更新任务状态 |
-| PATCH | /api/tasks/:id/position | 更新任务位置 |
-| DELETE | /api/tasks/:id | 删除任务 |
-| **Workspaces** | | |
-| POST | /api/tasks/:taskId/workspaces | 创建工作空间 |
-| GET | /api/workspaces/:id | 获取工作空间详情 |
-| DELETE | /api/workspaces/:id | 删除工作空间 |
-| GET | /api/workspaces/:id/diff | 获取代码 diff |
-| POST | /api/workspaces/:id/merge | 合并到主分支 |
-| **Sessions** | | |
-| POST | /api/workspaces/:workspaceId/sessions | 创建会话 |
-| GET | /api/sessions/:id | 获取会话详情 |
-| POST | /api/sessions/:id/start | 启动会话 |
-| POST | /api/sessions/:id/stop | 停止会话 |
-| POST | /api/sessions/:id/message | 发送后续消息 |
-| **System** | | |
-| GET | /api/health | 健康检查 |
-| GET | /api/agents | 获取可用 AI 代理列表 |
-
-#### 3.5.2 WebSocket 端点
-
-| 路径 | 说明 |
-|------|------|
-| /ws/terminal/:sessionId | 终端实时交互 |
-
-#### 3.5.3 SSE 端点
-
-| 路径 | 说明 |
-|------|------|
-| /api/events | 全局事件流 (任务状态变更、会话状态等) |
-
-### 3.6 执行器接口设计
-
-```typescript
-// packages/server/src/executors/base.executor.ts
-
-import type { IPty } from 'node-pty';
-
-export interface ExecutorConfig {
-  workingDir: string;      // 工作目录 (worktree 路径)
-  prompt: string;          // 发送给 AI 的提示
-  env?: Record<string, string>;  // 额外环境变量
-}
-
-export interface SpawnResult {
-  pid: number;
-  pty: IPty;
-}
-
-export interface AgentAvailability {
-  available: boolean;
-  version?: string;
-  error?: string;
-}
-
-export abstract class BaseExecutor {
-  abstract readonly agentType: AgentType;
-  abstract readonly displayName: string;
-
-  // 检查代理是否已安装且可用
-  abstract checkAvailability(): Promise<AgentAvailability>;
-
-  // 获取启动命令
-  abstract getCommand(): string;
-
-  // 获取命令参数
-  abstract getArgs(config: ExecutorConfig): string[];
-
-  // 启动代理
-  async spawn(config: ExecutorConfig): Promise<SpawnResult> {
-    const pty = spawn(this.getCommand(), this.getArgs(config), {
-      name: 'xterm-256color',
-      cols: 120,
-      rows: 30,
-      cwd: config.workingDir,
-      env: { ...process.env, ...config.env },
-    });
-
-    return { pid: pty.pid, pty };
-  }
-
-  // 发送后续消息 (用于交互式对话)
-  sendMessage(pty: IPty, message: string): void {
-    pty.write(message + '\n');
-  }
-}
-```
-
-```typescript
-// packages/server/src/executors/claude-code.executor.ts
-
-export class ClaudeCodeExecutor extends BaseExecutor {
-  readonly agentType = AgentType.CLAUDE_CODE;
-  readonly displayName = 'Claude Code';
-
-  async checkAvailability(): Promise<AgentAvailability> {
-    try {
-      const { stdout } = await execAsync('claude --version');
-      return { available: true, version: stdout.trim() };
-    } catch (error) {
-      return { available: false, error: 'Claude Code CLI not installed' };
-    }
-  }
-
-  getCommand(): string {
-    return 'claude';
-  }
-
-  getArgs(config: ExecutorConfig): string[] {
-    return ['--print', config.prompt];
-  }
-}
-```
-
-```typescript
-// packages/server/src/executors/gemini-cli.executor.ts
-
-export class GeminiCliExecutor extends BaseExecutor {
-  readonly agentType = AgentType.GEMINI_CLI;
-  readonly displayName = 'Gemini CLI';
-
-  async checkAvailability(): Promise<AgentAvailability> {
-    try {
-      const { stdout } = await execAsync('gemini --version');
-      return { available: true, version: stdout.trim() };
-    } catch (error) {
-      return { available: false, error: 'Gemini CLI not installed' };
-    }
-  }
-
-  getCommand(): string {
-    return 'gemini';
-  }
-
-  getArgs(config: ExecutorConfig): string[] {
-    return [config.prompt];
-  }
-}
-```
-
-### 3.7 Git Worktree 管理
-
-```typescript
-// packages/server/src/git/worktree.manager.ts
-
-import simpleGit, { SimpleGit } from 'simple-git';
-import path from 'path';
-import fs from 'fs/promises';
-
-export class WorktreeManager {
-  private git: SimpleGit;
-  private repoPath: string;
-  private worktreeBaseDir: string;
-
-  constructor(repoPath: string) {
-    this.repoPath = repoPath;
-    this.git = simpleGit(repoPath);
-    this.worktreeBaseDir = path.join(repoPath, '..', '.worktrees');
-  }
-
-  // 创建 worktree
-  async create(branchName: string): Promise<string> {
-    const worktreePath = path.join(this.worktreeBaseDir, branchName);
-
-    // 确保目录存在
-    await fs.mkdir(this.worktreeBaseDir, { recursive: true });
-
-    // 创建新分支并添加 worktree
-    await this.git.raw(['worktree', 'add', '-b', branchName, worktreePath]);
-
-    return worktreePath;
-  }
-
-  // 删除 worktree
-  async remove(worktreePath: string): Promise<void> {
-    await this.git.raw(['worktree', 'remove', worktreePath, '--force']);
-  }
-
-  // 获取 diff
-  async getDiff(worktreePath: string, baseBranch: string): Promise<string> {
-    const worktreeGit = simpleGit(worktreePath);
-    return worktreeGit.diff([baseBranch]);
-  }
-
-  // 合并到目标分支
-  async merge(worktreePath: string, targetBranch: string): Promise<void> {
-    const worktreeGit = simpleGit(worktreePath);
-    const currentBranch = await worktreeGit.revparse(['--abbrev-ref', 'HEAD']);
-
-    // 切换到目标分支
-    await this.git.checkout(targetBranch);
-
-    // 合并
-    await this.git.merge([currentBranch]);
-
-    // 删除 worktree
-    await this.remove(worktreePath);
-
-    // 删除分支
-    await this.git.deleteLocalBranch(currentBranch, true);
-  }
-
-  // 列出所有 worktree
-  async list(): Promise<string[]> {
-    const result = await this.git.raw(['worktree', 'list', '--porcelain']);
-    // 解析输出...
-    return [];
-  }
-}
-```
-
----
-
-## 4. 待确认事项
-
-| 序号 | 问题 | 选项 | 当前选择 |
-|------|------|------|----------|
-| 1 | 项目名称 | agent-kanban / ai-task-board / 其他 | ✅ agent-tower |
-| 2 | 包管理器 | pnpm / npm / yarn | ✅ pnpm |
-| 3 | UI 组件库 | 纯 TailwindCSS / shadcn/ui / Ant Design | ✅ shadcn/ui + TailwindCSS |
-| 4 | 第一版功能范围 | 见下方清单 | 待定 |
-
-### 第一版功能清单
-
-- [ ] 项目管理 (CRUD)
-- [ ] 任务看板 (拖拽排序)
-- [ ] Git worktree 创建/管理
-- [ ] Claude Code 执行器
-- [ ] Gemini CLI 执行器
-- [ ] 终端实时日志
-- [ ] 代码 diff 查看
-- [ ] 合并到主分支
-
----
-
-## 5. 后续扩展方向
-
-1. **更多 AI 代理支持**: Cursor Agent, Copilot, Codex 等
-2. **MCP 协议集成**: 让 AI 代理可以直接操作任务面板
-3. **多用户协作**: 用户认证、权限管理、团队协作
-4. **任务模板**: 预设常用任务类型
-5. **自动化工作流**: 任务完成后自动创建 PR、自动合并等
-6. **统计分析**: AI 代理使用统计、任务完成率等
-
----
-
-## 更新记录
+含义如下：
+
+- `Project`: 一个本地 Git 仓库
+- `Task`: 看板中的工作项
+- `Workspace`: 任务对应的独立 git worktree
+- `Session`: 一次 agent 执行或一次后续续聊
+- `ExecutionProcess`: 实际启动的底层 PTY/进程记录
+
+补充对象：
+
+- `Provider`: agent 的具体配置实例，包含环境变量和 CLI 设置
+- `Attachment`: 上传的文件，可注入到任务描述或会话消息中
+- `NotificationSettings`: 系统通知和飞书 webhook 配置
+
+### 3.2 状态定义
+
+- Task 状态：`TODO`、`IN_PROGRESS`、`IN_REVIEW`、`DONE`、`CANCELLED`
+- Workspace 状态：`ACTIVE`、`MERGED`、`ABANDONED`
+- Session 状态：`PENDING`、`RUNNING`、`COMPLETED`、`FAILED`、`CANCELLED`
+- Session 用途：`CHAT`、`COMMIT_MSG`
+
+## 4. 当前已实现能力
+
+### 4.1 项目与任务管理
+
+- 项目 CRUD，记录仓库路径、主分支、自动复制文件、setup script、快捷命令
+- 任务 CRUD
+- 看板式状态管理
+- 任务详情视图
+- 按项目过滤与实时刷新
+
+### 4.2 Worktree 与 Git 工作流
+
+- 每个任务可创建独立 workspace
+- workspace 使用独立分支和 git worktree 目录
+- 支持读取 diff、查看 Git 状态、rebase、abort operation
+- merge 使用 squash merge 流程
+- merge/rebase 冲突检测与冲突解决入口
+- merged workspace 可复用，便于任务继续迭代
+
+### 4.3 Agent 执行
+
+当前支持的 agent 类型：
+
+- Claude Code
+- Gemini CLI
+- Cursor Agent
+- Codex
+
+当前支持的执行能力：
+
+- 创建 session
+- 启动 agent
+- 续聊或继续执行已有 session
+- 停止运行中的 session
+- 为同一 agent 类型切换 provider
+- 记录 token usage、日志快照和执行进程
+
+### 4.4 实时体验
+
+- 通过 Socket.IO 订阅 session、task、project、terminal、agent room
+- 实时查看终端 stdout
+- 实时同步结构化日志 patch
+- 实时更新任务状态
+- 实时展示 workspace setup script 进度
+- 实时推送 AI 生成的 commit message
+
+### 4.5 Workspace 工作台
+
+任务详情页集成了一个完整工作台：
+
+- 日志流
+- Todo 面板
+- token usage 指示器
+- 文件编辑器
+- Git changes 视图
+- 历史视图
+- 独立终端 tabs
+- Open in IDE
+
+### 4.6 附加能力
+
+- 上传附件并注入任务/消息
+- OS 通知
+- 飞书 webhook 通知
+- Cloudflare tunnel 远程访问
+- MCP server 暴露任务板工具
+- 移动端适配
+
+## 5. 典型用户流程
+
+### 5.1 创建并启动任务
+
+1. 用户创建项目，关联本地仓库路径
+2. 用户创建任务，输入标题、描述、附件
+3. 用户选择 provider
+4. 系统创建 workspace，并在仓库旁边创建 git worktree
+5. 系统复制项目配置文件并异步执行 setup script
+6. 系统创建 session
+7. 系统启动对应 agent CLI
+8. 前端实时显示日志、Todo、变更和 token 使用情况
+
+### 5.2 继续对话
+
+1. 用户在任务详情页输入后续消息
+2. 后端为该 session 新建或替换底层 PTY
+3. 如有可用的 agent session id，则尝试 follow-up 模式
+4. 新输出继续进入同一个日志快照体系
+
+### 5.3 审查与合并
+
+1. 一个任务下所有聊天 session 结束后，任务自动推进到 `IN_REVIEW`
+2. 系统异步生成 commit message
+3. 用户查看 diff / Git 状态 / 冲突信息
+4. 用户执行 squash merge
+5. 任务推进到 `DONE`
+
+## 6. 自动化规则
+
+当前后端内置了几条重要的自动化规则：
+
+- Session 启动时，任务会自动转到 `IN_PROGRESS`
+- 任务下所有 `CHAT` session 结束后，任务自动转到 `IN_REVIEW`
+- 普通 `CHAT` session 正常退出后，后端会尝试自动提交未保存改动
+- 每次聊天 session 结束后，会重新触发 commit message 生成
+- 应用启动时会对所有项目执行 `git worktree prune`
+
+这些规则的目标是让任务尽量保持“可恢复、可审阅、状态一致”。
+
+## 7. 对外接口范围
+
+### 7.1 REST API
+
+当前 API 已覆盖以下领域：
+
+- 项目
+- 任务
+- 工作区
+- 会话
+- Git 状态与变更
+- 文件系统浏览与文件读写
+- Provider / Profile 管理
+- 独立终端
+- 附件
+- 通知设置
+- 隧道控制
+- 系统能力与清理
+
+### 7.2 Socket.IO 事件
+
+当前主要事件流包括：
+
+- session stdout / patch / exit / completed
+- task updated / deleted
+- terminal stdout / exit
+- workspace setup progress
+- workspace commit message updated
+- agent status changed
+
+### 7.3 MCP
+
+MCP 当前提供的主要工具包括：
+
+- `list_projects`
+- `list_tasks`
+- `create_task`
+- `get_task`
+- `update_task`
+- `delete_task`
+- `list_providers`
+- `start_workspace_session`
+- `get_workspace_diff`
+- `merge_workspace`
+- `stop_session`
+- `send_message`
+- `get_context`（仅在 worktree 目录内可用）
+
+## 8. 非目标与当前限制
+
+以下内容当前不属于已完成能力：
+
+- 多用户账户系统
+- 细粒度权限控制
+- 云端托管 agent 执行
+- GitHub PR / Checks 深度集成
+- 完整的浏览器预览面板
+- 通用的团队协作通知流
+
+此外，产品仍然依赖本机环境：
+
+- 目标仓库必须在本地可访问
+- 对应 agent CLI 必须已安装并可运行
+- provider 所需环境变量需要本机配置
+
+## 9. 当前设计原则
+
+- 本地优先：数据、代码、执行过程都尽量留在本机
+- 可恢复：session 日志会持久化为快照，页面刷新后仍可回看
+- 可并行：每个任务通过 worktree 隔离，允许多个 agent 并行工作
+- 可观察：日志、Todo、token、diff、Git 状态尽量集中呈现
+- 可扩展：通过 provider、executor、MCP tools 扩展能力，而不是把逻辑写死在单一 agent 上
+
+## 10. 更新记录
 
 | 日期 | 版本 | 说明 |
 |------|------|------|
-| 2026-02-04 | v0.1 | 初始版本，完成需求分析和架构设计 |
+| 2026-03-30 | v0.2 | 从早期方案文档重写为当前产品规格，补齐真实能力边界与用户流程 |
