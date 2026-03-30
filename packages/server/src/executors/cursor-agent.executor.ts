@@ -25,7 +25,7 @@ export interface CursorAgentConfig {
   appendPrompt?: string;
   /** 强制允许命令（除非明确拒绝） */
   force?: boolean;
-  /** 模型选择: auto, sonnet-4.5, sonnet-4.5-thinking, gpt-5, opus-4.1, grok, composer-1 */
+  /** 模型 ID，与 `cursor-agent --model` 一致；留空则 CLI 默认 (auto)。可用 `cursor-agent --list-models` 查看 */
   model?: string;
   /** 命令覆盖 */
   cmd?: CmdOverrides;

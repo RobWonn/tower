@@ -22,6 +22,7 @@ import {
   type ProviderImportPreview,
 } from '@agent-tower/shared'
 import { toast } from 'sonner'
+import { CursorAgentModelField } from '@/components/provider/CursorAgentModelField'
 
 const AGENT_TYPE_LABELS: Record<string, string> = {
   CLAUDE_CODE: 'Claude Code',
@@ -35,7 +36,7 @@ const AGENT_TYPE_LABELS: Record<string, string> = {
 interface ConfigFieldMeta {
   key: string
   label: string
-  type: 'switch' | 'input' | 'select' | 'textarea'
+  type: 'switch' | 'input' | 'select' | 'textarea' | 'cursor_model'
   options?: Array<{ value: string; label: string }>
   placeholder?: string
   rows?: number
@@ -59,17 +60,7 @@ const AGENT_CONFIG_FIELDS: Record<string, ConfigFieldMeta[]> = {
   ],
   [AgentType.CURSOR_AGENT]: [
     { key: 'force', label: '强制执行', type: 'switch' },
-    {
-      key: 'model',
-      label: '模型',
-      type: 'select',
-      options: [
-        { value: '', label: '默认 (auto)' },
-        { value: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4' },
-        { value: 'claude-sonnet-4-5-20250514', label: 'Claude Sonnet 4.5' },
-        { value: 'gpt-4o', label: 'GPT-4o' },
-      ],
-    },
+    { key: 'model', label: '模型', type: 'cursor_model' },
     APPEND_PROMPT_FIELD,
   ],
   [AgentType.CODEX]: [
@@ -296,6 +287,14 @@ function ConfigFieldsForm({
               placeholder={field.placeholder}
               rows={field.rows ?? 3}
               className="w-full px-3 py-1.5 text-sm border border-neutral-200 rounded focus:outline-none focus:ring-1 focus:ring-neutral-900"
+            />
+          </div>
+        ) : field.type === 'cursor_model' ? (
+          <div key={field.key} className="flex flex-col gap-2 sm:flex-row sm:items-start">
+            <label className="text-sm text-neutral-700 w-32 shrink-0 sm:pt-2">{field.label}</label>
+            <CursorAgentModelField
+              value={(config[field.key] as string) ?? ''}
+              onChange={v => updateField(field.key, v)}
             />
           </div>
         ) : (

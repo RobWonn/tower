@@ -72,4 +72,8 @@ export const queryKeys = {
   notifications: {
     settings: ['notifications', 'settings'] as const,
   },
+
+  system: {
+    cursorAgentModels: ['system', 'cursor-agent-models'] as const,
+  },
 }
