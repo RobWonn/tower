@@ -3,8 +3,8 @@
  * 参考 Rust 实现: crates/executors/src/executors/mod.rs
  */
 
-import * as pty from 'node-pty';
-import type { IPty } from 'node-pty';
+import * as pty from '@shitiandmw/node-pty';
+import type { IPty } from '@shitiandmw/node-pty';
 import { EventEmitter } from 'events';
 import { appendFileSync } from 'node:fs';
 import { AgentType } from '../types/index.js';

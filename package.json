@@ -27,9 +27,9 @@
     "onlyBuiltDependencies": [
       "@prisma/client",
       "@prisma/engines",
+      "@shitiandmw/node-pty",
       "cloudflared",
       "esbuild",
-      "node-pty",
       "prisma"
     ]
   }

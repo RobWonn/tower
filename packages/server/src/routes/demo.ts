@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import type { IPty } from 'node-pty';
+import type { IPty } from '@shitiandmw/node-pty';
 import { AgentType } from '../types/index.js';
 import { getExecutor, getAllExecutorsAvailability, ExecutionEnv } from '../executors/index.js';
 import { sessionMsgStoreManager, createClaudeCodeParser, createCursorAgentParser, createCodexParser } from '../output/index.js';

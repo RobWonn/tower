@@ -1,5 +1,5 @@
-import * as pty from 'node-pty';
-import type { IPty } from 'node-pty';
+import * as pty from '@shitiandmw/node-pty';
+import type { IPty } from '@shitiandmw/node-pty';
 import type { EventBus } from '../core/event-bus.js';
 import { randomUUID } from 'crypto';
 import { getDefaultTerminalShell } from '../utils/process-launch.js';

@@ -1,4 +1,4 @@
-import type { IPty } from 'node-pty';
+import type { IPty } from '@shitiandmw/node-pty';
 import type { MsgStore } from '../output/msg-store.js';
 import type { EventBus } from '../core/event-bus.js';
 

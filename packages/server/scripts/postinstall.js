@@ -1,13 +1,8 @@
 /**
- * postinstall 脚本 - 修复 node-pty 原生模块权限问题
+ * postinstall 脚本 - 修复 node-pty spawn-helper 权限问题
  *
- * 问题背景：
- * node-pty 是一个用于创建伪终端 (PTY) 的 Node.js 库，用于与 Claude Code、Gemini CLI 等 Agent 进行交互。
- * 在 macOS 上，pnpm 安装 node-pty 时，预编译的 spawn-helper 二进制文件可能会丢失执行权限，
- * 导致 "posix_spawnp failed" 错误。
- *
- * 解决方案：
- * 在 postinstall 阶段自动为 spawn-helper 添加执行权限。
+ * Agent Tower 使用 fork 后的 `@shitiandmw/node-pty`，其中 darwin fd 泄漏已在上游源码层修复。
+ * 这里仅保留一个安装期兜底：确保 `spawn-helper` 二进制文件具有可执行权限。
  */
 
 import { readdirSync, chmodSync, statSync, existsSync } from 'fs';
@@ -15,6 +10,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const NODE_PTY_PATH_RE = /(^|[\\/])(?:@shitiandmw[\\/])?node-pty(?:[\\/]|$)/;
 
 /**
  * 向上查找 monorepo 根目录（包含 pnpm-workspace.yaml 或根 node_modules）
@@ -61,10 +57,7 @@ function findFiles(dir, pattern, results = [], depth = 0, maxDepth = 10) {
   return results;
 }
 
-/**
- * 修复 spawn-helper 权限
- */
-function fixSpawnHelperPermissions() {
+function collectSearchDirs() {
   // 1. 优先查找包自身的 node_modules（npm 全局安装场景）
   const packageRoot = join(__dirname, '..');
   const localNodeModules = join(packageRoot, 'node_modules');
@@ -82,6 +75,16 @@ function fixSpawnHelperPermissions() {
     searchDirs.push(monorepoNodeModules);
   }
 
+  return {
+    packageRoot,
+    monorepoRoot,
+    searchDirs,
+  };
+}
+
+function fixSpawnHelperPermissions() {
+  const { searchDirs } = collectSearchDirs();
+
   if (searchDirs.length === 0) {
     console.log('[postinstall] 未找到 node_modules 目录，跳过 spawn-helper 权限修复');
     return;
@@ -93,7 +96,7 @@ function fixSpawnHelperPermissions() {
     const spawnHelpers = findFiles(nodeModulesDir, /^spawn-helper$/);
 
     for (const file of spawnHelpers) {
-      if (!file.includes('node-pty')) continue;
+      if (!NODE_PTY_PATH_RE.test(file)) continue;
 
       try {
         const stats = statSync(file);
@@ -116,5 +119,4 @@ function fixSpawnHelperPermissions() {
     console.log('[postinstall] 所有 spawn-helper 权限正常，无需修复');
   }
 }
-
 fixSpawnHelperPermissions();
