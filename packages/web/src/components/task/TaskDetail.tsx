@@ -30,12 +30,15 @@ import { useAttachments } from '@/hooks/use-attachments'
 import { AttachmentPreview } from '@/components/ui/AttachmentPreview'
 import { StartAgentDialog } from './StartAgentDialog'
 import { ProviderSelector } from './ProviderSelector'
+import { SlashCommandPopover } from './SlashCommandPopover'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { ConflictBanner } from '@/components/workspace/ConflictBanner'
 import { ResolveConflictsDialog } from '@/components/workspace/ResolveConflictsDialog'
 import { GitOperationsDialog } from '@/components/workspace/GitOperationsDialog'
 import type { UITaskDetailData } from './types'
 import { UITaskStatus } from './types'
+import { useSlashCommandMenu } from './useSlashCommandMenu'
+import { useSkillMentionMenu } from './useSkillMentionMenu'
 import { Streamdown } from 'streamdown'
 import type { UrlTransform } from 'streamdown'
 import { isTunnelAccess, getTunnelToken } from '@/lib/tunnel-token'
@@ -205,6 +208,7 @@ export function TaskDetail({ task, onDeleteTask, isDeleting, onTaskStatusChange 
   const [isResolveDialogOpen, setIsResolveDialogOpen] = useState(false)
   const [isGitDialogOpen, setIsGitDialogOpen] = useState(false)
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false)
+  const inputContainerRef = useRef<HTMLDivElement>(null)
   const moreMenuRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -303,6 +307,26 @@ export function TaskDetail({ task, onDeleteTask, isDeleting, onTaskStatusChange 
     }
     return workspaces[0]?.worktreePath
   }, [workspaces])
+
+  const slashCommandMenu = useSlashCommandMenu({
+    agentType: activeSession?.agentType,
+    workingDir,
+    input,
+    setInput,
+    textareaRef,
+    minHeight: 60,
+    maxHeight: 300,
+  })
+
+  const skillMentionMenu = useSkillMentionMenu({
+    agentType: activeSession?.agentType,
+    workingDir,
+    input,
+    setInput,
+    textareaRef,
+    minHeight: 60,
+    maxHeight: 300,
+  })
 
   // Derive active workspace ID for Open in IDE
   const activeWorkspaceId = useMemo(() => {
@@ -862,9 +886,12 @@ export function TaskDetail({ task, onDeleteTask, isDeleting, onTaskStatusChange 
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
           >
-            <div className={`relative bg-white rounded-xl border shadow-sm hover:shadow-md focus-within:shadow-md focus-within:border-neutral-300 transition-all duration-200 ${
+            <div
+              ref={inputContainerRef}
+              className={`relative bg-white rounded-xl border shadow-sm hover:shadow-md focus-within:shadow-md focus-within:border-neutral-300 transition-all duration-200 ${
               isDragOver ? 'border-blue-400 bg-blue-50/50 shadow-md' : 'border-neutral-200'
-            }`}>
+            }`}
+            >
               {/* Attachment Preview */}
               <AttachmentPreview files={attachmentFiles} onRemove={removeFile} />
 
@@ -874,6 +901,8 @@ export function TaskDetail({ task, onDeleteTask, isDeleting, onTaskStatusChange 
                 onChange={handleInput}
                 onPaste={handlePaste}
                 onKeyDown={(e) => {
+                  if (skillMentionMenu.handleKeyDown(e)) return
+                  if (slashCommandMenu.handleKeyDown(e)) return
                   if (e.key === 'Enter' && !e.shiftKey && !e.repeat && !e.nativeEvent.isComposing && e.nativeEvent.keyCode !== 229) {
                     e.preventDefault()
                     handleSend()
@@ -940,6 +969,27 @@ export function TaskDetail({ task, onDeleteTask, isDeleting, onTaskStatusChange 
                 </div>
               </div>
             </div>
+            <SlashCommandPopover
+              open={slashCommandMenu.query !== null}
+              anchorRef={inputContainerRef}
+              commands={slashCommandMenu.filteredCommands}
+              selectedIndex={slashCommandMenu.selectedIndex}
+              query={slashCommandMenu.query ?? ''}
+              hasCatalog={slashCommandMenu.allCommands.length > 0}
+              onSelect={slashCommandMenu.applyCommand}
+            />
+            <SlashCommandPopover
+              open={skillMentionMenu.query !== null}
+              anchorRef={inputContainerRef}
+              commands={skillMentionMenu.filteredSkills}
+              selectedIndex={skillMentionMenu.selectedIndex}
+              query={skillMentionMenu.query ?? ''}
+              hasCatalog={skillMentionMenu.allSkills.length > 0}
+              title="Skills"
+              queryPrefix="$"
+              emptyCatalogMessage="No skills catalog for this agent yet."
+              onSelect={skillMentionMenu.applySkill}
+            />
           </div>
           )}
         </div>

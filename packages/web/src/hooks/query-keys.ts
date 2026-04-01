@@ -79,5 +79,9 @@ export const queryKeys = {
 
   system: {
     cursorAgentModels: ['system', 'cursor-agent-models'] as const,
+    slashCommandCatalog: (agentType?: string | null, workingDir?: string) =>
+      ['system', 'slash-command-catalog', agentType ?? null, workingDir ?? null] as const,
+    skillCatalog: (agentType?: string | null, workingDir?: string) =>
+      ['system', 'skill-catalog', agentType ?? null, workingDir ?? null] as const,
   },
 }

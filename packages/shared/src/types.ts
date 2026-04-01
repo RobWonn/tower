@@ -104,6 +104,21 @@ export interface QuickCommand {
   command: string
 }
 
+export type SlashCommandKind = 'builtin' | 'command' | 'skill'
+export type SlashCommandScope = 'project' | 'user'
+
+export interface SlashCommandOption {
+  command: string
+  description: string
+  aliases?: string[]
+  kind?: SlashCommandKind
+  scope?: SlashCommandScope
+}
+
+export interface SlashCommandCatalogResponse {
+  commands: SlashCommandOption[]
+}
+
 /** 项目 */
 export interface Project {
   id: string

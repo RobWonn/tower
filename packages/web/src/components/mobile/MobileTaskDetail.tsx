@@ -21,9 +21,12 @@ import { useAttachments } from '@/hooks/use-attachments'
 import { AttachmentPreview } from '@/components/ui/AttachmentPreview'
 import { StartAgentDialog } from '@/components/task/StartAgentDialog'
 import { ProviderSelector } from '@/components/task/ProviderSelector'
+import { SlashCommandPopover } from '@/components/task/SlashCommandPopover'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import type { UITaskDetailData } from '@/components/task/types'
 import { UITaskStatus } from '@/components/task/types'
+import { useSlashCommandMenu } from '@/components/task/useSlashCommandMenu'
+import { useSkillMentionMenu } from '@/components/task/useSkillMentionMenu'
 import { Streamdown } from 'streamdown'
 import type { UrlTransform } from 'streamdown'
 import { isTunnelAccess, getTunnelToken } from '@/lib/tunnel-token'
@@ -107,6 +110,7 @@ export function MobileTaskDetail({ task, onBack, onDeleteTask, isDeleting }: Mob
   const [isStartDialogOpen, setIsStartDialogOpen] = useState(false)
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false)
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false)
+  const inputContainerRef = useRef<HTMLDivElement>(null)
   const moreMenuRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -183,6 +187,26 @@ export function MobileTaskDetail({ task, onBack, onDeleteTask, isDeleting }: Mob
     }
     return workspaces[0]?.worktreePath
   }, [workspaces])
+
+  const slashCommandMenu = useSlashCommandMenu({
+    agentType: activeSession?.agentType,
+    workingDir,
+    input,
+    setInput,
+    textareaRef,
+    minHeight: 40,
+    maxHeight: 140,
+  })
+
+  const skillMentionMenu = useSkillMentionMenu({
+    agentType: activeSession?.agentType,
+    workingDir,
+    input,
+    setInput,
+    textareaRef,
+    minHeight: 40,
+    maxHeight: 140,
+  })
 
   const activeWorkspaceId = useMemo(() => {
     if (!workspaces) return undefined
@@ -538,7 +562,10 @@ export function MobileTaskDetail({ task, onBack, onDeleteTask, isDeleting }: Mob
           {/* Input Area */}
           {sessionId && (
             <div className="px-3 py-2 bg-white shrink-0 border-t border-neutral-100">
-              <div className="relative bg-white rounded-xl border border-neutral-200 shadow-sm focus-within:border-neutral-300">
+              <div
+                ref={inputContainerRef}
+                className="relative bg-white rounded-xl border border-neutral-200 shadow-sm focus-within:border-neutral-300"
+              >
                 <AttachmentPreview files={attachmentFiles} onRemove={removeFile} />
 
                 <textarea
@@ -547,6 +574,8 @@ export function MobileTaskDetail({ task, onBack, onDeleteTask, isDeleting }: Mob
                   onChange={handleInput}
                   onPaste={handlePaste}
                   onKeyDown={(e) => {
+                    if (skillMentionMenu.handleKeyDown(e)) return
+                    if (slashCommandMenu.handleKeyDown(e)) return
                     if (e.key === 'Enter' && !e.shiftKey && !e.repeat && !e.nativeEvent.isComposing && e.nativeEvent.keyCode !== 229) {
                       e.preventDefault()
                       handleSend()
@@ -609,6 +638,29 @@ export function MobileTaskDetail({ task, onBack, onDeleteTask, isDeleting }: Mob
                   </div>
                 </div>
               </div>
+              <SlashCommandPopover
+                open={slashCommandMenu.query !== null}
+                anchorRef={inputContainerRef}
+                commands={slashCommandMenu.filteredCommands}
+                selectedIndex={slashCommandMenu.selectedIndex}
+                query={slashCommandMenu.query ?? ''}
+                hasCatalog={slashCommandMenu.allCommands.length > 0}
+                compact
+                onSelect={slashCommandMenu.applyCommand}
+              />
+              <SlashCommandPopover
+                open={skillMentionMenu.query !== null}
+                anchorRef={inputContainerRef}
+                commands={skillMentionMenu.filteredSkills}
+                selectedIndex={skillMentionMenu.selectedIndex}
+                query={skillMentionMenu.query ?? ''}
+                hasCatalog={skillMentionMenu.allSkills.length > 0}
+                title="Skills"
+                queryPrefix="$"
+                emptyCatalogMessage="No skills catalog for this agent yet."
+                compact
+                onSelect={skillMentionMenu.applySkill}
+              />
             </div>
           )}
         </div>

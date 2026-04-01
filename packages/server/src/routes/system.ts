@@ -3,6 +3,7 @@ import { promisify } from 'node:util';
 import type { FastifyInstance } from 'fastify';
 import { AgentType } from '../types/index.js';
 import { stripAnsiSequences } from '../output/utils/ansi.js';
+import { discoverSkillCatalog, discoverSlashCommandCatalog } from '../services/slash-command-catalog.service.js';
 import { prisma } from '../utils/index.js';
 
 const execFileAsync = promisify(execFile);
@@ -66,6 +67,16 @@ export async function systemRoutes(app: FastifyInstance) {
         error: e instanceof Error ? e.message : String(e),
       };
     }
+  });
+
+  app.get('/system/slash-command-catalog', async (request) => {
+    const { agentType, workingDir } = request.query as { agentType?: string; workingDir?: string };
+    return discoverSlashCommandCatalog(agentType, workingDir);
+  });
+
+  app.get('/system/skill-catalog', async (request) => {
+    const { agentType, workingDir } = request.query as { agentType?: string; workingDir?: string };
+    return discoverSkillCatalog(agentType, workingDir);
   });
 
   // MCP 上下文检测：根据 cwd 路径查找匹配的活跃工作空间
