@@ -5,6 +5,7 @@ import { queryClient } from '@/lib/query-client'
 import { AppRouter } from '@/routes'
 import { socketManager } from '@/lib/socket/manager'
 import { I18nProvider } from '@/lib/i18n'
+import { GlobalRealtimeSync } from '@/components/GlobalRealtimeSync'
 
 function App() {
   // Establish socket connection once at app startup.
@@ -17,6 +18,7 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <I18nProvider>
+        <GlobalRealtimeSync />
         <AppRouter />
         <Toaster
           position="top-center"

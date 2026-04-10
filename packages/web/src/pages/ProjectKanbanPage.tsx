@@ -10,7 +10,6 @@ import { adaptProject, adaptTaskForDetail, adaptTaskForList, mapTaskStatusToUI, 
 import { useProjects, useCreateProject } from '@/hooks/use-projects'
 import { useTasks, useCreateTask, useDeleteTask, useUpdateTaskStatus } from '@/hooks/use-tasks'
 import { useStartSession } from '@/hooks/use-sessions'
-import { useTaskRealtimeSync } from '@/lib/socket/hooks/useTaskRealtimeSync'
 import { apiClient } from '@/lib/api-client'
 import { queryKeys } from '@/hooks/query-keys'
 import { Settings, Paperclip } from 'lucide-react'
@@ -128,10 +127,6 @@ export function ProjectKanbanPage() {
   const effectiveFilterProjectId = filterProjectId && projects.some(project => project.id === filterProjectId)
     ? filterProjectId
     : null
-
-  // === 实时同步：订阅 project rooms，监听 task:updated / task:deleted 事件 ===
-  const projectIdsForSync = useMemo(() => projects.map(p => p.id), [projects])
-  useTaskRealtimeSync(projectIdsForSync)
 
   // 当选中了某个项目时，直接用 useTasks 获取该项目的任务
   const { data: filteredTasksData, isLoading: isFilteredTasksLoading } = useTasks(
