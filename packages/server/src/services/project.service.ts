@@ -239,11 +239,6 @@ export class ProjectService {
    * - 校验 repoPath 是否存在且为有效的 Git 仓库
    */
   async create(input: CreateProjectInput) {
-    const { resolvedPath, repoRemoteUrl } = await resolveAndValidateRepoPath(input.repoPath);
-
-    // 空仓库（无任何 commit）自动创建初始提交，否则 worktree 无法工作
-    await ensureRepoHasCommit(resolvedPath);
-
     // 检查同名项目
     const existing = await prisma.project.findFirst({
       where: { name: input.name },
@@ -253,6 +248,27 @@ export class ProjectService {
         `A project with name "${input.name}" already exists`
       );
     }
+
+    // Remote projects: skip local git validation, store repoPath as-is
+    if (input.serverId) {
+      return prisma.project.create({
+        data: {
+          name: input.name,
+          description: input.description,
+          repoPath: input.repoPath,
+          mainBranch: input.mainBranch || 'main',
+          copyFiles: input.copyFiles,
+          setupScript: input.setupScript,
+          quickCommands: input.quickCommands,
+          serverId: input.serverId,
+        },
+      });
+    }
+
+    const { resolvedPath, repoRemoteUrl } = await resolveAndValidateRepoPath(input.repoPath);
+
+    // 空仓库（无任何 commit）自动创建初始提交，否则 worktree 无法工作
+    await ensureRepoHasCommit(resolvedPath);
 
     return prisma.project.create({
       data: {
@@ -264,7 +280,7 @@ export class ProjectService {
         copyFiles: input.copyFiles,
         setupScript: input.setupScript,
         quickCommands: input.quickCommands,
-        serverId: input.serverId || null,
+        serverId: null,
       },
     });
   }

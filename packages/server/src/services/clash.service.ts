@@ -221,6 +221,27 @@ export class ClashService {
     }
   }
 
+  /**
+   * Ensure private-network DIRECT rules exist at the top of runtime.yaml.
+   * This is a safety net: even if mixin.yaml is missing them, SSH to
+   * remote servers in private subnets will never be proxied.
+   */
+  static ensureLanRules(): void {
+    const lanRules = [
+      'IP-CIDR,127.0.0.0/8,DIRECT', 'IP-CIDR,10.0.0.0/8,DIRECT',
+      'IP-CIDR,172.16.0.0/12,DIRECT', 'IP-CIDR,192.168.0.0/16,DIRECT',
+      'IP-CIDR,100.64.0.0/10,DIRECT', 'IP-CIDR,169.254.0.0/16,DIRECT',
+      'IP-CIDR6,::1/128,DIRECT', 'IP-CIDR6,fc00::/7,DIRECT', 'IP-CIDR6,fe80::/10,DIRECT',
+    ];
+    try {
+      const first = yq('.rules[0] // ""', CONFIG_RUNTIME);
+      if (first === lanRules[0]) return;
+    } catch { /* */ }
+
+    const entries = lanRules.map(r => `"${r}"`).join(', ');
+    shell(`${BIN_YQ} -i '.rules = [${entries}] + (.rules // [])' '${CONFIG_RUNTIME}'`);
+  }
+
   /** Merge config.yaml + mixin.yaml → runtime.yaml and restart mihomo */
   static mergeConfigRestart(): void {
     shell(`cd ${CLASH_BASE_DIR} && bin/yq eval-all '
@@ -233,6 +254,8 @@ export class ClashService {
       .proxies = (($mixin.proxies.prefix // []) + (($config.proxies // []) as $cl | ($mixin.proxies.override // []) as $ol | $cl | map(. as $ci | ($ol[] | select(.name == $ci.name)) // $ci)) + ($mixin.proxies.suffix // [])) |
       .proxy-groups = (($mixin.proxy-groups.prefix // []) + (($config.proxy-groups // []) as $cl | ($mixin.proxy-groups.override // []) as $ol | $cl | map(. as $ci | ($ol[] | select(.name == $ci.name)) // $ci)) + ($mixin.proxy-groups.suffix // []))
     ' resources/config.yaml resources/mixin.yaml > resources/runtime.yaml`);
+
+    ClashService.ensureLanRules();
 
     shell('sudo pkill -9 -f "mihomo" || true');
     shell('sleep 0.3');

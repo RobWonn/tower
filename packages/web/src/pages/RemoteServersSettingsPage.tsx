@@ -14,6 +14,14 @@ import {
   Pencil,
   Loader2,
   Monitor,
+  Shield,
+  ShieldCheck,
+  ShieldOff,
+  Globe,
+  Play,
+  Square,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react'
 import { Modal } from '@/components/ui/modal'
 import { CursorLoginDialog } from '@/components/remote/CursorLoginDialog'
@@ -27,6 +35,20 @@ import {
   useInstallCursorAgent,
   type RemoteServer,
 } from '@/hooks/use-remote-servers'
+import {
+  useRemoteClashStatus,
+  useRemoteClashInstall,
+  useRemoteClashFullSetup,
+  useRemoteClashStart,
+  useRemoteClashStop,
+  useRemoteClashRestart,
+  useRemoteClashSetTun,
+  useRemoteClashTest,
+  useRemoteClashSubscriptions,
+  useRemoteClashAddSubscription,
+  useRemoteClashUseSubscription,
+  type RemoteClashTestResult,
+} from '@/hooks/use-remote-clash'
 import { useI18n } from '@/lib/i18n'
 
 interface ServerFormData {
@@ -322,8 +344,10 @@ function ServerCard({
   isTesting: boolean
   isChecking: boolean
   isInstalling: boolean
-  t: (s: string) => string
+  t: (s: string, vars?: Record<string, string>) => string
 }) {
+  const [showClash, setShowClash] = useState(false)
+
   return (
     <div className="rounded-xl border border-neutral-100 bg-white overflow-hidden">
       <div className="p-4">
@@ -380,7 +404,23 @@ function ServerCard({
         {server.agentInstalled && (
           <ActionBtn icon={<LogIn size={12} />} label={t('登录 Cursor')} onClick={onLogin} />
         )}
+        <div className="flex-1" />
+        <button
+          onClick={() => setShowClash(v => !v)}
+          className="flex items-center gap-1 px-2 py-1 text-[11px] text-neutral-600 border border-neutral-200 rounded-md hover:bg-white transition-colors"
+        >
+          <Shield size={12} />
+          {t('TUN 代理')}
+          {showClash ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
+        </button>
       </div>
+
+      {/* Collapsible Clash management panel */}
+      {showClash && (
+        <div className="px-4 py-3 border-t border-neutral-100 bg-neutral-50/50">
+          <RemoteClashPanel serverId={server.id} t={t} />
+        </div>
+      )}
     </div>
   )
 }
@@ -397,5 +437,198 @@ function ActionBtn({ icon, label, onClick, loading }: {
       {loading ? <Loader2 size={12} className="animate-spin" /> : icon}
       {label}
     </button>
+  )
+}
+
+// ─── Remote Clash Panel ────────────────────────────────────────────────────────
+
+function RemoteClashPanel({ serverId, t }: { serverId: string; t: (s: string, vars?: Record<string, string>) => string }) {
+  const { data: status, isLoading } = useRemoteClashStatus(serverId)
+  const { data: subs } = useRemoteClashSubscriptions(serverId)
+  const install = useRemoteClashInstall(serverId)
+  const fullSetup = useRemoteClashFullSetup(serverId)
+  const start = useRemoteClashStart(serverId)
+  const stop = useRemoteClashStop(serverId)
+  const restart = useRemoteClashRestart(serverId)
+  const setTun = useRemoteClashSetTun(serverId)
+  const testConn = useRemoteClashTest(serverId)
+  const addSub = useRemoteClashAddSubscription(serverId)
+  const useSub = useRemoteClashUseSubscription(serverId)
+
+  const [subUrl, setSubUrl] = useState('')
+  const [setupUrl, setSetupUrl] = useState('')
+  const [testResult, setTestResult] = useState<RemoteClashTestResult | null>(null)
+
+  if (isLoading) return <div className="text-xs text-neutral-400 py-2">{t('检测代理状态...')}</div>
+
+  // Not installed: show install panel
+  if (!status?.installed) {
+    return (
+      <div className="space-y-3">
+        <div className="flex items-center gap-2">
+          <ShieldOff size={14} className="text-neutral-400" />
+          <span className="text-xs text-neutral-500">{t('TUN 代理未安装')}</span>
+        </div>
+        <p className="text-[11px] text-neutral-400">
+          {t('一键安装 mihomo 并配置 TUN 代理，让远程 Agent 可以访问 Opus 等区域限制模型。')}
+        </p>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={setupUrl}
+            onChange={(e) => setSetupUrl(e.target.value)}
+            placeholder={t('输入订阅链接...')}
+            className="flex-1 h-8 px-3 border border-neutral-200 rounded-lg text-xs bg-white focus:outline-none focus:border-neutral-400"
+          />
+          <button
+            onClick={() => {
+              if (!setupUrl.trim()) {
+                install.mutate(undefined, {
+                  onSuccess: (r) => r.success ? toast.success(t('安装成功')) : toast.error(r.message),
+                  onError: (e) => toast.error(String(e)),
+                })
+              } else {
+                fullSetup.mutate(setupUrl.trim(), {
+                  onSuccess: (r) => r.success ? toast.success(t('安装并配置完成')) : toast.error(r.message),
+                  onError: (e) => toast.error(String(e)),
+                })
+              }
+            }}
+            disabled={install.isPending || fullSetup.isPending}
+            className="h-8 px-3 text-xs font-medium rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 disabled:opacity-50"
+          >
+            {(install.isPending || fullSetup.isPending) ? t('安装中...') : setupUrl.trim() ? t('安装并配置') : t('仅安装')}
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // Installed: show management panel
+  return (
+    <div className="space-y-3">
+      {/* Status row */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5">
+            {status.running ? <ShieldCheck size={14} className="text-green-600" /> : <ShieldOff size={14} className="text-neutral-400" />}
+            <span className={`text-xs font-medium ${status.running ? 'text-green-700' : 'text-neutral-500'}`}>
+              {status.running ? t('代理运行中') : t('代理已停止')}
+            </span>
+          </div>
+          {status.running && status.tunEnabled && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 font-medium">TUN</span>
+          )}
+          {status.running && status.mixedPort && (
+            <span className="text-[10px] text-neutral-400 font-mono">:{status.mixedPort}</span>
+          )}
+        </div>
+        <div className="flex items-center gap-1.5">
+          {status.running ? (
+            <>
+              <button
+                onClick={() => restart.mutate(undefined, { onSuccess: () => toast.success(t('已重启')) })}
+                disabled={restart.isPending}
+                className="h-6 px-2 text-[10px] rounded border border-neutral-200 text-neutral-600 hover:bg-white disabled:opacity-50"
+              >
+                {restart.isPending ? <Loader2 size={10} className="animate-spin" /> : t('重启')}
+              </button>
+              <button
+                onClick={() => stop.mutate(undefined, { onSuccess: () => toast.success(t('已停止')) })}
+                disabled={stop.isPending}
+                className="h-6 px-2 text-[10px] rounded border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50"
+              >
+                <Square size={10} />
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={() => start.mutate(undefined, { onSuccess: () => toast.success(t('已启动')) })}
+              disabled={start.isPending}
+              className="h-6 px-2 text-[10px] rounded bg-neutral-900 text-white hover:bg-neutral-800 disabled:opacity-50"
+            >
+              {start.isPending ? <Loader2 size={10} className="animate-spin" /> : <Play size={10} />}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* TUN toggle */}
+      {status.running && (
+        <div className="flex items-center justify-between py-1">
+          <span className="text-xs text-neutral-600">{t('TUN 模式（全局透明代理）')}</span>
+          <button
+            onClick={() => setTun.mutate(!status.tunEnabled, {
+              onSuccess: () => toast.success(status.tunEnabled ? t('TUN 已关闭') : t('TUN 已开启')),
+            })}
+            disabled={setTun.isPending}
+            className={`relative w-9 h-5 rounded-full transition-colors ${status.tunEnabled ? 'bg-green-500' : 'bg-neutral-300'} ${setTun.isPending ? 'opacity-50' : ''}`}
+          >
+            <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${status.tunEnabled ? 'translate-x-4' : ''}`} />
+          </button>
+        </div>
+      )}
+
+      {/* Subscriptions */}
+      {subs && subs.profiles.length > 0 && (
+        <div className="space-y-1">
+          {subs.profiles.map((p) => (
+            <div key={p.id} className={`flex items-center gap-2 px-2 py-1 rounded text-[11px] ${subs.use === p.id ? 'bg-neutral-900 text-white' : 'bg-neutral-50 text-neutral-600'}`}>
+              <span className="flex-1 truncate font-mono">{p.url}</span>
+              {subs.use !== p.id && (
+                <button
+                  onClick={() => useSub.mutate(p.id)}
+                  disabled={useSub.isPending}
+                  className="px-1.5 py-0.5 rounded bg-white text-neutral-600 border border-neutral-200 hover:border-neutral-400 disabled:opacity-50"
+                >
+                  {t('使用')}
+                </button>
+              )}
+              {subs.use === p.id && <span className="text-[10px] opacity-60">{t('当前')}</span>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Add subscription */}
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={subUrl}
+          onChange={(e) => setSubUrl(e.target.value)}
+          placeholder={t('添加订阅链接...')}
+          className="flex-1 h-7 px-2 border border-neutral-200 rounded text-[11px] bg-white focus:outline-none focus:border-neutral-400"
+        />
+        <button
+          onClick={() => {
+            if (!subUrl.trim()) return
+            addSub.mutate(subUrl.trim(), { onSuccess: () => { setSubUrl(''); toast.success(t('订阅已添加')) } })
+          }}
+          disabled={addSub.isPending || !subUrl.trim()}
+          className="h-7 px-2 text-[10px] font-medium rounded bg-neutral-900 text-white hover:bg-neutral-800 disabled:opacity-50"
+        >
+          {addSub.isPending ? '...' : t('添加')}
+        </button>
+      </div>
+
+      {/* Test connectivity */}
+      {status.running && (
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => testConn.mutate(undefined, { onSuccess: (r) => setTestResult(r) })}
+            disabled={testConn.isPending}
+            className="h-6 px-2 text-[10px] rounded border border-neutral-200 text-neutral-600 hover:bg-white disabled:opacity-50 flex items-center gap-1"
+          >
+            {testConn.isPending ? <Loader2 size={10} className="animate-spin" /> : <Globe size={10} />}
+            {t('测试出口')}
+          </button>
+          {testResult && (
+            <span className={`text-[10px] ${testResult.success ? 'text-green-600' : 'text-red-500'}`}>
+              {testResult.success ? `✓ ${testResult.ip} (${testResult.country})` : `✗ ${testResult.error?.slice(0, 60)}`}
+            </span>
+          )}
+        </div>
+      )}
+    </div>
   )
 }

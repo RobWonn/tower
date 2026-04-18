@@ -530,7 +530,7 @@ export function ProjectKanbanPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-neutral-700 mb-1.5">{t('Repository Path')}</label>
-                  <FolderPicker value={newProjectRepoPath} onChange={setNewProjectRepoPath} />
+                  <FolderPicker value={newProjectRepoPath} onChange={setNewProjectRepoPath} serverId={newProjectServerId || undefined} />
                 </div>
               </div>
             </Modal>
@@ -592,7 +592,7 @@ export function ProjectKanbanPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-neutral-700 mb-1.5">{t('Repository Path')}</label>
-                <FolderPicker value={newProjectRepoPath} onChange={setNewProjectRepoPath} />
+                <FolderPicker value={newProjectRepoPath} onChange={setNewProjectRepoPath} serverId={newProjectServerId || undefined} />
               </div>
             </div>
           </Modal>
@@ -806,6 +806,7 @@ export function ProjectKanbanPage() {
               <FolderPicker
                 value={newProjectRepoPath}
                 onChange={setNewProjectRepoPath}
+                serverId={newProjectServerId || undefined}
               />
             </div>
             {createProject.isError && (

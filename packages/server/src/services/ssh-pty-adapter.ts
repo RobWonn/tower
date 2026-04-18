@@ -22,7 +22,6 @@ let fakePidCounter = 900000;
 export function createSSHPty(channel: ClientChannel): SSHPty {
   const pid = ++fakePidCounter;
   let killed = false;
-
   const dataListeners: Array<(data: string) => void> = [];
   const exitListeners: Array<(e: { exitCode: number; signal?: number }) => void> = [];
 

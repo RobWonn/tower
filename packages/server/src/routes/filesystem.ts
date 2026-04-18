@@ -3,6 +3,7 @@ import { z, ZodError } from 'zod';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { SSHService } from '../services/ssh.service.js';
 
 /**
  * 查询参数校验：path 必须是绝对路径且不含 ".." 片段
@@ -195,6 +196,104 @@ export async function filesystemRoutes(app: FastifyInstance) {
         return { valid: false, path: dirPath, error: 'Not a Git repository (no .git found)' };
       }
 
+      return { valid: true, path: dirPath };
+    } catch (error) {
+      return handleError(error, reply);
+    }
+  });
+
+  // =========================================================================
+  // Remote filesystem browsing via SSH
+  // =========================================================================
+
+  const remoteBrowseSchema = z.object({
+    serverId: z.string().min(1, 'serverId is required'),
+    path: z.string().optional().default(''),
+  });
+
+  const remoteValidateSchema = z.object({
+    serverId: z.string().min(1, 'serverId is required'),
+    path: z.string().min(1, 'path is required'),
+  });
+
+  app.get('/browse-remote', async (request, reply) => {
+    try {
+      const { serverId, path: dirPath } = remoteBrowseSchema.parse(request.query);
+
+      const script = `
+d=${dirPath ? JSON.stringify(dirPath) : '$HOME'}
+if [ ! -d "$d" ]; then echo '{"error":"DIR_NOT_FOUND"}'; exit 0; fi
+echo "CURRENT_DIR:$d"
+echo "PARENT_DIR:$(dirname "$d")"
+for entry in "$d"/*/; do
+  [ -d "$entry" ] || continue
+  name=$(basename "$entry")
+  case "$name" in .*) continue;; esac
+  full="$entry"
+  full=\${full%/}
+  if [ -d "$full/.git" ]; then
+    echo "DIR:$name:$full:git"
+  else
+    echo "DIR:$name:$full:"
+  fi
+done
+`;
+      const output = await SSHService.exec(serverId, script);
+
+      if (output.includes('"error":"DIR_NOT_FOUND"')) {
+        reply.code(400);
+        return { error: `Directory does not exist on remote`, code: 'DIR_NOT_FOUND' };
+      }
+
+      let current = '';
+      let parent = '';
+      const dirs: { name: string; path: string; isGitRepo: boolean }[] = [];
+
+      for (const line of output.split('\n')) {
+        if (line.startsWith('CURRENT_DIR:')) {
+          current = line.slice('CURRENT_DIR:'.length).trim();
+        } else if (line.startsWith('PARENT_DIR:')) {
+          parent = line.slice('PARENT_DIR:'.length).trim();
+        } else if (line.startsWith('DIR:')) {
+          const parts = line.slice('DIR:'.length).split(':');
+          if (parts.length >= 3) {
+            dirs.push({
+              name: parts[0],
+              path: parts[1],
+              isGitRepo: parts[2] === 'git',
+            });
+          }
+        }
+      }
+
+      dirs.sort((a, b) => a.name.localeCompare(b.name));
+      return { current, parent, dirs };
+    } catch (error) {
+      return handleError(error, reply);
+    }
+  });
+
+  app.get('/validate-remote', async (request, reply) => {
+    try {
+      const { serverId, path: dirPath } = remoteValidateSchema.parse(request.query);
+
+      const script = `
+d=${JSON.stringify(dirPath)}
+if [ ! -e "$d" ]; then echo "NOT_EXIST"; exit 0; fi
+if [ ! -d "$d" ]; then echo "NOT_DIR"; exit 0; fi
+if [ -d "$d/.git" ]; then echo "GIT_OK"; else echo "NO_GIT"; fi
+`;
+      const output = (await SSHService.exec(serverId, script)).trim();
+
+      if (output === 'NOT_EXIST') {
+        return { valid: false, path: dirPath, error: 'Path does not exist' };
+      }
+      if (output === 'NOT_DIR') {
+        return { valid: false, path: dirPath, error: 'Path is not a directory' };
+      }
+      if (output === 'NO_GIT') {
+        return { valid: false, path: dirPath, error: 'Not a Git repository (no .git found)' };
+      }
       return { valid: true, path: dirPath };
     } catch (error) {
       return handleError(error, reply);

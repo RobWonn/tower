@@ -74,6 +74,11 @@ export class WorkspaceService {
     }
     ensureProjectIsMutable(task.project, 'create workspaces');
 
+    // Remote projects: skip local worktree creation, use repoPath directly
+    if (task.project.serverId) {
+      return this.createRemoteWorkspace(taskId, task.project.repoPath);
+    }
+
     const worktreeManager = new WorktreeManager(task.project.repoPath);
 
     // 查找可复用的 MERGED workspace（branch 已通过 update-ref 保留）
@@ -155,6 +160,23 @@ export class WorkspaceService {
       });
       throw err;
     }
+  }
+
+  /**
+   * Create a lightweight workspace for a remote project.
+   * No local worktree is created; the agent runs directly in the remote repoPath.
+   */
+  private async createRemoteWorkspace(taskId: string, repoPath: string) {
+    const workspace = await prisma.workspace.create({
+      data: {
+        taskId,
+        branchName: 'remote',
+        worktreePath: repoPath,
+        status: WorkspaceStatus.ACTIVE,
+      },
+      include: { sessions: true, task: { include: { project: true } } },
+    });
+    return workspace;
   }
 
   // ── Delete ───────────────────────────────────────────────────────────────────

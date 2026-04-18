@@ -1,5 +1,6 @@
 import { Client, type ConnectConfig, type ClientChannel } from 'ssh2';
 import { readFileSync } from 'node:fs';
+import { createConnection as netCreateConnection } from 'node:net';
 import { prisma } from '../utils/index.js';
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import { ClashService } from './clash.service.js';
@@ -304,9 +305,8 @@ export class SSHService {
         });
 
         client.on('tcp connection', (_info, accept) => {
-          const { createConnection } = require('node:net') as typeof import('node:net');
           const upstream = accept();
-          const local = createConnection({ host: '127.0.0.1', port: localPort });
+          const local = netCreateConnection({ host: '127.0.0.1', port: localPort });
           upstream.pipe(local).pipe(upstream);
           upstream.on('error', () => local.destroy());
           local.on('error', () => upstream.close());
@@ -325,6 +325,120 @@ export class SSHService {
         resolve({ client, channel });
       });
     });
+  }
+
+  /**
+   * Run a command via SSH exec (non-interactive) with reverse proxy tunnel.
+   * Unlike shell(), exec() gives clean stdout/stderr without login banners or prompts.
+   */
+  static async execWithProxyTunnel(
+    serverId: string,
+    command: string,
+    options?: { term?: string; cols?: number; rows?: number },
+  ): Promise<{ client: Client; channel: ClientChannel }> {
+    const server = await prisma.remoteServer.findUnique({ where: { id: serverId } });
+    if (!server) throw new Error(`Server ${serverId} not found`);
+
+    const config = await buildConnectConfig(server);
+
+    // Set up reverse tunnel on a SEPARATE connection so it doesn't
+    // interfere with the exec channel's data flow (forwardIn on the same
+    // connection causes silent data loss).
+    let tunnelClient: Client | undefined;
+    const status = ClashService.getStatus();
+    if (status.running && status.mixedPort) {
+      const localPort = status.mixedPort;
+      try {
+        tunnelClient = new Client();
+        await new Promise<void>((resolve, reject) => {
+          tunnelClient!.on('ready', () => resolve());
+          tunnelClient!.on('error', (err) => {
+            console.warn(`[SSH] Tunnel connection failed: ${err.message}`);
+            tunnelClient = undefined;
+            resolve();
+          });
+          tunnelClient!.connect(config);
+        });
+
+        if (tunnelClient) {
+          await new Promise<void>((resolve) => {
+            tunnelClient!.forwardIn('127.0.0.1', localPort, (err) => {
+              if (err) {
+                console.warn(`[SSH] Reverse tunnel failed (port ${localPort}): ${err.message}`);
+              } else {
+                console.log(`[SSH] Reverse tunnel: remote 127.0.0.1:${localPort} -> local 127.0.0.1:${localPort}`);
+              }
+              resolve();
+            });
+          });
+
+          tunnelClient.on('tcp connection', (_info, accept) => {
+            const upstream = accept();
+            const local = netCreateConnection({ host: '127.0.0.1', port: localPort });
+            upstream.pipe(local).pipe(upstream);
+            upstream.on('error', () => local.destroy());
+            local.on('error', () => upstream.close());
+          });
+        }
+      } catch (err) {
+        console.warn(`[SSH] Proxy tunnel setup failed:`, err);
+        tunnelClient = undefined;
+      }
+    }
+
+    // Create a separate, dedicated connection for the exec channel.
+    const client = new Client();
+    await new Promise<void>((resolve, reject) => {
+      client.on('ready', () => resolve());
+      client.on('error', reject);
+      client.connect(config);
+    });
+
+    const term = options?.term ?? 'xterm-256color';
+    const cols = options?.cols ?? 120;
+    const rows = options?.rows ?? 30;
+
+    return new Promise((resolve, reject) => {
+      client.exec(command, { pty: { term, cols, rows } }, (err, channel) => {
+        if (err) {
+          client.end();
+          if (tunnelClient) tunnelClient.end();
+          return reject(err);
+        }
+        // Clean up tunnel connection when the exec channel closes
+        channel.on('close', () => {
+          if (tunnelClient) {
+            try { tunnelClient.end(); } catch { /* ignore */ }
+          }
+        });
+        resolve({ client, channel });
+      });
+    });
+  }
+
+  /**
+   * Upload a local file to the remote server via SFTP.
+   */
+  static async uploadFile(serverId: string, localPath: string, remotePath: string): Promise<void> {
+    const server = await prisma.remoteServer.findUnique({ where: { id: serverId } });
+    if (!server) throw new Error(`Server ${serverId} not found`);
+
+    const config = await buildConnectConfig(server);
+    const client = await pool.acquire(serverId, config);
+    try {
+      await new Promise<void>((resolve, reject) => {
+        client.sftp((err, sftp) => {
+          if (err) return reject(err);
+          sftp.fastPut(localPath, remotePath, (err2) => {
+            sftp.end();
+            if (err2) return reject(err2);
+            resolve();
+          });
+        });
+      });
+    } finally {
+      pool.release(serverId, client);
+    }
   }
 
   static async checkCursorAgent(serverId: string): Promise<{
@@ -532,6 +646,11 @@ export class SSHService {
 
   static getPool(): SSHConnectionPool {
     return pool;
+  }
+
+  static releaseClient(_serverId: string, client: Client): void {
+    // For dedicated connections (from execWithProxyTunnel), just close them.
+    try { client.end(); } catch { /* ignore */ }
   }
 
   static disconnect(serverId: string): void {

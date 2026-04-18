@@ -499,7 +499,7 @@ export function ProjectSettingsPage() {
               <label className="block text-sm font-medium text-neutral-700 mb-1.5">
                 {t('Repository Path')}
               </label>
-              <FolderPicker value={restoreProjectRepoPath} onChange={setRestoreProjectRepoPath} />
+              <FolderPicker value={restoreProjectRepoPath} onChange={setRestoreProjectRepoPath} serverId={selectedProjectForAction?.serverId ?? undefined} />
               <p className="mt-2 text-xs text-neutral-400">
                 {t('Agent Tower 会尽量校验仓库 identity；如果 remote URL 或目录名不同，会给出警告但允许继续。')}
               </p>

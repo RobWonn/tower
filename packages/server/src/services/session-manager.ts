@@ -147,7 +147,9 @@ export class SessionManager {
 
     console.log('[SessionManager] ✅ Executor found, spawning process...');
 
-    const workingDir = session.workspace.worktreePath;
+    const workingDir = serverId
+      ? await this.resolveWorkingDir(session.workspace.taskId, session.workspace.worktreePath)
+      : session.workspace.worktreePath;
     const env = ExecutionEnv.default(workingDir);
 
     if (session.providerId) {
@@ -158,6 +160,8 @@ export class SessionManager {
     }
 
     this.injectProxyEnv(env);
+
+    console.log('[SessionManager] Working dir:', workingDir, serverId ? '(remote)' : '(local)');
 
     const spawnResult = await executor.spawn({
       workingDir,
@@ -288,7 +292,9 @@ export class SessionManager {
       executor = new RemoteExecutorWrapper(executor, sendServerId);
     }
 
-    const workingDir = session.workspace.worktreePath;
+    const workingDir = sendServerId
+      ? await this.resolveWorkingDir(session.workspace.taskId, session.workspace.worktreePath)
+      : session.workspace.worktreePath;
     const env = ExecutionEnv.default(workingDir);
 
     if (effectiveProviderId) {
@@ -413,6 +419,21 @@ export class SessionManager {
       include: { project: { select: { serverId: true } } },
     });
     return task?.project?.serverId ?? null;
+  }
+
+  /**
+   * For remote projects, return the project's repoPath on the remote server.
+   * For local projects, return the workspace's worktreePath.
+   */
+  private async resolveWorkingDir(taskId: string, worktreePath: string): Promise<string> {
+    const task = await prisma.task.findUnique({
+      where: { id: taskId },
+      include: { project: { select: { serverId: true, repoPath: true } } },
+    });
+    if (task?.project?.serverId && task.project.repoPath) {
+      return task.project.repoPath;
+    }
+    return worktreePath;
   }
 
   private resolveAgentSessionId(sessionId: string, logSnapshot: string | null): string | null {
