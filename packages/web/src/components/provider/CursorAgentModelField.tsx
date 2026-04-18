@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown, RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useCursorAgentModels } from '@/hooks/use-cursor-agent-models'
 import { useI18n } from '@/lib/i18n'
@@ -11,7 +11,7 @@ interface CursorAgentModelFieldProps {
 
 export function CursorAgentModelField({ value, onChange }: CursorAgentModelFieldProps) {
   const { t } = useI18n()
-  const { data, isLoading, isError } = useCursorAgentModels()
+  const { data, isLoading, isError, refetch, isFetching } = useCursorAgentModels()
   const models = data?.models ?? []
   const [listOpen, setListOpen] = useState(false)
   const [filter, setFilter] = useState('')
@@ -37,19 +37,30 @@ export function CursorAgentModelField({ value, onChange }: CursorAgentModelField
         className="w-full px-3 py-1.5 text-sm border border-neutral-200 rounded focus:outline-none focus:ring-1 focus:ring-neutral-900 font-mono"
       />
 
-      <button
-        type="button"
-        onClick={() => setListOpen(o => !o)}
-        disabled={isLoading}
-        className="flex items-center gap-1 text-xs text-neutral-600 hover:text-neutral-900 disabled:opacity-50 w-fit"
-      >
-        <ChevronDown size={14} className={cn('transition-transform', listOpen && 'rotate-180')} />
-        {isLoading
-          ? t('正在加载 cursor-agent 模型列表…')
-          : listOpen
-            ? t('收起列表')
-            : t('从本机 cursor-agent 选择（{count} 个）', { count: models.length })}
-      </button>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setListOpen(o => !o)}
+          disabled={isLoading}
+          className="flex items-center gap-1 text-xs text-neutral-600 hover:text-neutral-900 disabled:opacity-50 w-fit"
+        >
+          <ChevronDown size={14} className={cn('transition-transform', listOpen && 'rotate-180')} />
+          {isLoading
+            ? t('正在加载 cursor-agent 模型列表…')
+            : listOpen
+              ? t('收起列表')
+              : t('从本机 cursor-agent 选择（{count} 个）', { count: models.length })}
+        </button>
+        <button
+          type="button"
+          onClick={() => refetch()}
+          disabled={isFetching}
+          title={t('刷新模型列表')}
+          className="flex items-center gap-1 text-xs text-neutral-500 hover:text-neutral-900 disabled:opacity-50"
+        >
+          <RefreshCw size={12} className={cn(isFetching && 'animate-spin')} />
+        </button>
+      </div>
 
       {listOpen && !isLoading && (
         <div className="rounded-lg border border-neutral-200 bg-white shadow-sm overflow-hidden">

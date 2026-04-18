@@ -1,6 +1,7 @@
 import { Server } from 'socket.io'
 import type { FastifyInstance } from 'fastify'
 import { authMiddleware } from './middleware/index.js'
+import { basicAuthSocketMiddleware } from '../middleware/basic-auth.js'
 import { SocketGateway } from './socket-gateway.js'
 import { NAMESPACE, type AgentStatusPayload } from './events.js'
 import { getEventBus, getSessionManager, getTerminalManager, getNotificationService } from '../core/container.js'
@@ -37,6 +38,9 @@ export async function initializeSocket(fastify: FastifyInstance): Promise<Server
   })
 
   const nsp = io.of(NAMESPACE)
+  if (process.env.AGENT_TOWER_AUTH_USER) {
+    nsp.use(basicAuthSocketMiddleware as Parameters<typeof nsp.use>[0])
+  }
   nsp.use(authMiddleware)
 
   const tm = await getTerminalManager()
