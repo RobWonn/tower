@@ -137,6 +137,8 @@ export interface Project {
   setupScript?: string | null
   /** JSON 字符串: QuickCommand[]，终端快捷命令 */
   quickCommands?: string | null
+  /** 远程服务器 ID (null 表示本机) */
+  serverId?: string | null
   archivedAt?: string | null
   repoDeletedAt?: string | null
   createdAt?: string

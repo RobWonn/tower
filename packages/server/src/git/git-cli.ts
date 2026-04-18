@@ -140,6 +140,29 @@ export async function ensureGitAvailable(): Promise<void> {
   }
 }
 
+// ─── Remote Git Execution ─────────────────────────────────────────────────────
+
+/**
+ * Execute a git command on a remote server via SSH.
+ * Drop-in replacement for execGit when the project lives on a remote host.
+ */
+export async function execRemoteGit(
+  serverId: string,
+  repoPath: string,
+  args: string[],
+): Promise<string> {
+  // Lazy import to avoid circular dependency at module load time
+  const { SSHService } = await import('../services/ssh.service.js');
+  const escaped = args.map(a => (/^[a-zA-Z0-9_./:@=-]+$/.test(a) ? a : `'${a.replace(/'/g, "'\\''")}'`));
+  const command = `git -C '${repoPath}' ${escaped.join(' ')}`;
+  try {
+    return await SSHService.exec(serverId, command);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new GitError(`remote git ${args.join(' ')} failed: ${msg}`, 'GIT_REMOTE_ERROR');
+  }
+}
+
 // ─── Branch Name Validation ───────────────────────────────────────────────────
 
 /**

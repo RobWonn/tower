@@ -11,6 +11,7 @@ const createProjectSchema = z.object({
   copyFiles: z.string().optional(),
   setupScript: z.string().optional(),
   quickCommands: z.string().optional(),
+  serverId: z.string().optional(),
 });
 
 const updateProjectSchema = z.object({

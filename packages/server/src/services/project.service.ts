@@ -19,6 +19,7 @@ interface CreateProjectInput {
   copyFiles?: string;
   setupScript?: string;
   quickCommands?: string;
+  serverId?: string;
 }
 
 interface UpdateProjectInput {
@@ -263,6 +264,7 @@ export class ProjectService {
         copyFiles: input.copyFiles,
         setupScript: input.setupScript,
         quickCommands: input.quickCommands,
+        serverId: input.serverId || null,
       },
     });
   }

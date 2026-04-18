@@ -77,6 +77,12 @@ export const queryKeys = {
     detail: ['app-settings'] as const,
   },
 
+  remoteServers: {
+    all: ['remote-servers'] as const,
+    list: () => ['remote-servers', 'list'] as const,
+    detail: (id: string) => ['remote-servers', 'detail', id] as const,
+  },
+
   system: {
     cursorAgentModels: ['system', 'cursor-agent-models'] as const,
     slashCommandCatalog: (agentType?: string | null, workingDir?: string) =>

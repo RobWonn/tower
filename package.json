@@ -30,7 +30,9 @@
       "@shitiandmw/node-pty",
       "cloudflared",
       "esbuild",
-      "prisma"
+      "prisma",
+      "cpu-features",
+      "ssh2"
     ]
   }
 }

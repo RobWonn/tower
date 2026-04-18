@@ -15,6 +15,8 @@ import { tunnelRoutes } from './tunnel.js';
 import { attachmentRoutes } from './attachments.js';
 import { appSettingsRoutes } from './app-settings.js';
 import { notificationRoutes } from './notifications.js';
+import { remoteServerRoutes } from './remote-servers.js';
+import { clashRoutes } from './clash.js';
 
 export async function registerRoutes(app: FastifyInstance) {
   // 系统路由
@@ -64,4 +66,10 @@ export async function registerRoutes(app: FastifyInstance) {
 
   // 通知配置路由
   await app.register(notificationRoutes, { prefix: '/api' });
+
+  // 远程服务器路由
+  await app.register(remoteServerRoutes, { prefix: '/api' });
+
+  // Clash 代理管理路由
+  await app.register(clashRoutes, { prefix: '/api' });
 }

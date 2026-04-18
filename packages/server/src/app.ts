@@ -11,6 +11,7 @@ import { WorkspaceService } from './services/workspace.service.js';
 import { TunnelService } from './services/tunnel.service.js';
 import { tunnelAuthHook } from './middleware/tunnel-auth.js';
 import { basicAuthHook } from './middleware/basic-auth.js';
+import { SSHService } from './services/ssh.service.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -74,9 +75,10 @@ export async function buildApp() {
     });
   });
 
-  // 服务器关闭时清理 Socket.IO 和 Tunnel
+  // 服务器关闭时清理 Socket.IO、Tunnel 和 SSH 连接
   app.addHook('onClose', async () => {
     TunnelService.stop();
+    SSHService.destroy();
     await closeSocket();
   });
 

@@ -1,6 +1,6 @@
 import { prisma } from '../utils/index.js';
 import { AgentType, SessionStatus, SessionPurpose, TaskStatus } from '../types/index.js';
-import { getExecutor, getExecutorByProvider, getProviderById, ExecutionEnv } from '../executors/index.js';
+import { getExecutor, getExecutorByProvider, getProviderById, ExecutionEnv, type BaseExecutor } from '../executors/index.js';
 import {
   sessionMsgStoreManager,
   createClaudeCodeParser,
@@ -15,6 +15,8 @@ import { AgentPipeline, type OutputParser } from '../pipeline/agent-pipeline.js'
 import { execGit } from '../git/git-cli.js';
 import type { EventBus } from '../core/event-bus.js';
 import { getCommitMessageService } from '../core/container.js';
+import { RemoteExecutorWrapper } from '../executors/remote-executor-wrapper.js';
+import { ClashService } from './clash.service.js';
 
 const DEBUG_SNAPSHOT = process.env.DEBUG_SNAPSHOT === 'true';
 
@@ -72,6 +74,29 @@ export class SessionManager {
     });
   }
 
+  /**
+   * Inject proxy env vars from local Clash (mihomo) into the ExecutionEnv.
+   * Only injects when mihomo is running and has a mixed-port configured.
+   */
+  private injectProxyEnv(env: InstanceType<typeof ExecutionEnv>): void {
+    const proxyUrl = ClashService.getProxyUrl();
+    if (!proxyUrl) return;
+
+    const status = ClashService.getStatus();
+    if (!status.running) return;
+
+    env.set('HTTP_PROXY', proxyUrl);
+    env.set('http_proxy', proxyUrl);
+    env.set('HTTPS_PROXY', proxyUrl);
+    env.set('https_proxy', proxyUrl);
+    env.set('ALL_PROXY', proxyUrl);
+    env.set('all_proxy', proxyUrl);
+    env.set('NO_PROXY', 'localhost,127.0.0.1,::1');
+    env.set('no_proxy', 'localhost,127.0.0.1,::1');
+
+    console.log(`[SessionManager] 🌐 Proxy injected: ${proxyUrl}`);
+  }
+
   async create(workspaceId: string, agentType: AgentType, prompt: string, variant: string = 'DEFAULT', providerId?: string) {
     return prisma.session.create({
       data: {
@@ -107,11 +132,17 @@ export class SessionManager {
     });
 
     const agentType = session.agentType as AgentType;
-    const executor = session.providerId
+    let executor: BaseExecutor | undefined = session.providerId
       ? getExecutorByProvider(session.providerId)
       : getExecutor(agentType, session.variant ?? 'DEFAULT');
     if (!executor) {
       throw new Error(`Executor not found for agent type: ${session.agentType}${session.providerId ? ` (provider: ${session.providerId})` : ''}`);
+    }
+
+    // Wrap with RemoteExecutorWrapper if project is on a remote server
+    const serverId = await this.resolveServerId(session.workspace.taskId);
+    if (serverId) {
+      executor = new RemoteExecutorWrapper(executor, serverId);
     }
 
     console.log('[SessionManager] ✅ Executor found, spawning process...');
@@ -119,13 +150,14 @@ export class SessionManager {
     const workingDir = session.workspace.worktreePath;
     const env = ExecutionEnv.default(workingDir);
 
-    // 如果有 provider，注入 provider 的环境变量
     if (session.providerId) {
       const provider = getProviderById(session.providerId);
       if (provider && Object.keys(provider.env).length > 0) {
         env.merge(provider.env);
       }
     }
+
+    this.injectProxyEnv(env);
 
     const spawnResult = await executor.spawn({
       workingDir,
@@ -243,25 +275,30 @@ export class SessionManager {
 
     const agentSessionId = this.resolveAgentSessionId(id, session.logSnapshot);
     const agentType = session.agentType as AgentType;
-    // 优先使用传入的 providerId，否则使用 session 中的 providerId
     const effectiveProviderId = providerId ?? session.providerId ?? undefined;
-    const executor = effectiveProviderId
+    let executor: BaseExecutor | undefined = effectiveProviderId
       ? getExecutorByProvider(effectiveProviderId)
       : getExecutor(agentType, session.variant ?? 'DEFAULT');
     if (!executor) {
       throw new Error(`Executor not found for agent type: ${session.agentType}${effectiveProviderId ? ` (provider: ${effectiveProviderId})` : ''}`);
     }
 
+    const sendServerId = await this.resolveServerId(session.workspace.taskId);
+    if (sendServerId) {
+      executor = new RemoteExecutorWrapper(executor, sendServerId);
+    }
+
     const workingDir = session.workspace.worktreePath;
     const env = ExecutionEnv.default(workingDir);
 
-    // 如果有 provider，注入 provider 的环境变量
     if (effectiveProviderId) {
       const provider = getProviderById(effectiveProviderId);
       if (provider && Object.keys(provider.env).length > 0) {
         env.merge(provider.env);
       }
     }
+
+    this.injectProxyEnv(env);
 
     const spawnConfig = {
       workingDir,
@@ -364,6 +401,18 @@ export class SessionManager {
     }
     this.pipelines.clear();
     this.cancelTokens.clear();
+  }
+
+  /**
+   * Resolve the remote server ID for a task's project.
+   * Returns null for local projects.
+   */
+  private async resolveServerId(taskId: string): Promise<string | null> {
+    const task = await prisma.task.findUnique({
+      where: { id: taskId },
+      include: { project: { select: { serverId: true } } },
+    });
+    return task?.project?.serverId ?? null;
   }
 
   private resolveAgentSessionId(sessionId: string, logSnapshot: string | null): string | null {

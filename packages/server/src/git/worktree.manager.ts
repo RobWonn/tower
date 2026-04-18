@@ -4,6 +4,7 @@ import { ConflictOp } from '@agent-tower/shared';
 import type { GitOperationStatus } from '@agent-tower/shared';
 import {
   execGit,
+  execRemoteGit,
   isValidBranchName,
   GitError,
   BranchExistsError,
@@ -64,10 +65,28 @@ export interface DiffResult {
 export class WorktreeManager {
   private repoPath: string;
   private worktreeBaseDir: string;
+  private serverId: string | null;
 
-  constructor(repoPath: string) {
+  constructor(repoPath: string, serverId?: string | null) {
     this.repoPath = repoPath;
     this.worktreeBaseDir = path.join(repoPath, '..', '.worktrees');
+    this.serverId = serverId ?? null;
+  }
+
+  /** Execute git command in the repo root - local or remote depending on serverId */
+  private git(args: string[], options?: { timeout?: number }): Promise<string> {
+    if (this.serverId) {
+      return execRemoteGit(this.serverId, this.repoPath, args);
+    }
+    return execGit(this.repoPath, args, options);
+  }
+
+  /** Execute git command in an arbitrary directory (e.g. a worktree path) */
+  private gitAt(cwd: string, args: string[], options?: { timeout?: number }): Promise<string> {
+    if (this.serverId) {
+      return execRemoteGit(this.serverId, cwd, args);
+    }
+    return execGit(cwd, args, options);
   }
 
   // ── Read-only Queries ───────────────────────────────────────────────────────
@@ -77,7 +96,7 @@ export class WorktreeManager {
    * Parses `git worktree list --porcelain` output.
    */
   async listWorktrees(): Promise<WorktreeInfo[]> {
-    const result = await execGit(this.repoPath, ['worktree', 'list', '--porcelain']);
+    const result = await this.git( ['worktree', 'list', '--porcelain']);
     return this.parseWorktreeListOutput(result);
   }
 
@@ -88,7 +107,7 @@ export class WorktreeManager {
     await this.ensureBranchExists(branchName);
     await this.ensureBranchExists(baseBranch);
 
-    const output = await execGit(this.repoPath, [
+    const output = await this.git( [
       'rev-list',
       '--left-right',
       '--count',
@@ -106,7 +125,7 @@ export class WorktreeManager {
    * Get the working tree status of a worktree (changed + untracked file counts).
    */
   async getWorktreeStatus(worktreePath: string): Promise<WorktreeStatus> {
-    const output = await execGit(worktreePath, ['status', '--porcelain']);
+    const output = await this.gitAt(worktreePath, ['status', '--porcelain']);
     const lines = output.split('\n').filter((l) => l.length > 0);
 
     let changedFiles = 0;
@@ -136,7 +155,7 @@ export class WorktreeManager {
    */
   async checkBranchExists(branchName: string): Promise<boolean> {
     try {
-      await execGit(this.repoPath, ['rev-parse', '--verify', `refs/heads/${branchName}`]);
+      await this.git( ['rev-parse', '--verify', `refs/heads/${branchName}`]);
       return true;
     } catch {
       return false;
@@ -169,7 +188,7 @@ export class WorktreeManager {
     await fs.mkdir(this.worktreeBaseDir, { recursive: true });
 
     try {
-      await execGit(this.repoPath, ['worktree', 'add', '-b', branchName, worktreePath]);
+      await this.git( ['worktree', 'add', '-b', branchName, worktreePath]);
     } catch (err) {
       // Wrap with more context
       if (err instanceof GitError) {
@@ -201,7 +220,7 @@ export class WorktreeManager {
     }
 
     try {
-      await execGit(this.repoPath, ['worktree', 'remove', worktreePath, '--force']);
+      await this.git( ['worktree', 'remove', worktreePath, '--force']);
     } catch (err) {
       // If the error indicates the worktree is not registered, treat as no-op
       if (err instanceof GitError && err.message.includes('is not a working tree')) {
@@ -242,7 +261,7 @@ export class WorktreeManager {
     // Create worktree from existing branch (no -b flag)
     await fs.mkdir(this.worktreeBaseDir, { recursive: true });
     try {
-      await execGit(this.repoPath, ['worktree', 'add', worktreePath, branchName]);
+      await this.git( ['worktree', 'add', worktreePath, branchName]);
     } catch (err) {
       if (err instanceof GitError) {
         throw new GitError(
@@ -267,10 +286,10 @@ export class WorktreeManager {
     baseBranch: string,
     options?: { withStat: boolean }
   ): Promise<string | DiffResult> {
-    const diff = await execGit(worktreePath, ['diff', baseBranch]);
+    const diff = await this.gitAt(worktreePath, ['diff', baseBranch]);
 
     if (options?.withStat) {
-      const stat = await execGit(worktreePath, ['diff', '--stat', baseBranch]);
+      const stat = await this.gitAt(worktreePath, ['diff', '--stat', baseBranch]);
       return { diff, stat };
     }
 
@@ -294,7 +313,7 @@ export class WorktreeManager {
     options?: { commitMessage?: string }
   ): Promise<{ sha: string; taskBranch: string }> {
     // Determine the current branch of the worktree
-    const currentBranchRaw = await execGit(worktreePath, ['rev-parse', '--abbrev-ref', 'HEAD']);
+    const currentBranchRaw = await this.gitAt(worktreePath, ['rev-parse', '--abbrev-ref', 'HEAD']);
     const taskBranch = currentBranchRaw.trim();
 
     // 1. Check worktree is clean
@@ -310,11 +329,11 @@ export class WorktreeManager {
     }
 
     // 3. Checkout target branch in main repo
-    await execGit(this.repoPath, ['checkout', targetBranch]);
+    await this.git( ['checkout', targetBranch]);
 
     // 4. Squash merge (no commit yet)
     try {
-      await execGit(this.repoPath, [
+      await this.git( [
         'merge',
         '--squash',
         '--no-commit',
@@ -326,7 +345,7 @@ export class WorktreeManager {
         const conflictedFiles = await this.getConflictedFiles();
         if (conflictedFiles.length > 0) {
           // Abort the merge to leave the repo clean
-          await execGit(this.repoPath, ['merge', '--abort']).catch(() => {
+          await this.git( ['merge', '--abort']).catch(() => {
             // merge --abort may fail if no merge in progress, ignore
           });
           throw new MergeConflictError(conflictedFiles, ConflictOp.MERGE);
@@ -338,15 +357,15 @@ export class WorktreeManager {
     // 5. Commit the squash
     const message =
       options?.commitMessage ?? `squash merge branch '${taskBranch}'`;
-    await execGit(this.repoPath, ['commit', '-m', message]);
+    await this.git( ['commit', '-m', message]);
 
     // 6. Get the merge commit SHA
-    const sha = (await execGit(this.repoPath, ['rev-parse', 'HEAD'])).trim();
+    const sha = (await this.git( ['rev-parse', 'HEAD'])).trim();
 
     // 7. Update task branch ref to point to the merge commit.
     //    This allows future work to continue from the merged state without conflicts.
     //    参考: vibe-kanban crates/git/src/lib.rs:873-879
-    await execGit(this.repoPath, ['update-ref', `refs/heads/${taskBranch}`, sha]);
+    await this.git( ['update-ref', `refs/heads/${taskBranch}`, sha]);
 
     // 8. Remove worktree (but keep the branch for future reuse)
     await this.remove(worktreePath);
@@ -358,7 +377,7 @@ export class WorktreeManager {
    * Prune stale worktree references.
    */
   async prune(): Promise<void> {
-    await execGit(this.repoPath, ['worktree', 'prune']);
+    await this.git( ['worktree', 'prune']);
   }
 
   // ── Rebase & Git Operation Status ──────────────────────────────────────────
@@ -383,15 +402,15 @@ export class WorktreeManager {
     }
 
     // Get current branch name
-    const currentBranchRaw = await execGit(worktreePath, ['rev-parse', '--abbrev-ref', 'HEAD']);
+    const currentBranchRaw = await this.gitAt(worktreePath, ['rev-parse', '--abbrev-ref', 'HEAD']);
     const taskBranch = currentBranchRaw.trim();
 
     // Calculate merge-base
-    const mergeBaseRaw = await execGit(worktreePath, ['merge-base', baseBranch, taskBranch]);
+    const mergeBaseRaw = await this.gitAt(worktreePath, ['merge-base', baseBranch, taskBranch]);
     const mergeBase = mergeBaseRaw.trim();
 
     try {
-      await execGit(worktreePath, ['rebase', '--onto', baseBranch, mergeBase, taskBranch]);
+      await this.gitAt(worktreePath, ['rebase', '--onto', baseBranch, mergeBase, taskBranch]);
     } catch (err) {
       // Check if it's a conflict
       if (await this.isRebaseInProgress(worktreePath)) {
@@ -403,7 +422,7 @@ export class WorktreeManager {
 
       // Non-conflict failure: auto-abort to keep repo clean
       try {
-        await execGit(worktreePath, ['rebase', '--abort']);
+        await this.gitAt(worktreePath, ['rebase', '--abort']);
       } catch {
         // ignore abort failure
       }
@@ -438,7 +457,7 @@ export class WorktreeManager {
     let ahead = 0;
     let behind = 0;
     try {
-      const currentBranchRaw = await execGit(worktreePath, ['rev-parse', '--abbrev-ref', 'HEAD']);
+      const currentBranchRaw = await this.gitAt(worktreePath, ['rev-parse', '--abbrev-ref', 'HEAD']);
       const currentBranch = currentBranchRaw.trim();
       const status = await this.getBranchStatus(currentBranch, baseBranch);
       ahead = status.ahead;
@@ -476,12 +495,12 @@ export class WorktreeManager {
    */
   async abortOperation(worktreePath: string): Promise<void> {
     if (await this.isRebaseInProgress(worktreePath)) {
-      await execGit(worktreePath, ['rebase', '--abort']);
+      await this.gitAt(worktreePath, ['rebase', '--abort']);
       return;
     }
 
     if (await this.isMergeInProgress(worktreePath)) {
-      await execGit(worktreePath, ['merge', '--abort']);
+      await this.gitAt(worktreePath, ['merge', '--abort']);
       return;
     }
 
@@ -569,7 +588,7 @@ export class WorktreeManager {
    */
   private async getConflictedFilesIn(worktreePath: string): Promise<string[]> {
     try {
-      const output = await execGit(worktreePath, ['diff', '--name-only', '--diff-filter=U']);
+      const output = await this.gitAt(worktreePath, ['diff', '--name-only', '--diff-filter=U']);
       return output
         .split('\n')
         .map((f) => f.trim())
@@ -585,8 +604,8 @@ export class WorktreeManager {
    */
   private async isRebaseInProgress(worktreePath: string): Promise<boolean> {
     try {
-      const rebaseMergePath = (await execGit(worktreePath, ['rev-parse', '--git-path', 'rebase-merge'])).trim();
-      const rebaseApplyPath = (await execGit(worktreePath, ['rev-parse', '--git-path', 'rebase-apply'])).trim();
+      const rebaseMergePath = (await this.gitAt(worktreePath, ['rev-parse', '--git-path', 'rebase-merge'])).trim();
+      const rebaseApplyPath = (await this.gitAt(worktreePath, ['rev-parse', '--git-path', 'rebase-apply'])).trim();
 
       const [mergeExists, applyExists] = await Promise.all([
         fs.access(rebaseMergePath).then(() => true).catch(() => false),
@@ -605,7 +624,7 @@ export class WorktreeManager {
    */
   private async isMergeInProgress(worktreePath: string): Promise<boolean> {
     try {
-      await execGit(worktreePath, ['rev-parse', '--verify', 'MERGE_HEAD']);
+      await this.gitAt(worktreePath, ['rev-parse', '--verify', 'MERGE_HEAD']);
       return true;
     } catch {
       return false;

@@ -34,6 +34,11 @@ export const ServerEvents = {
   // Workspace setup progress
   WORKSPACE_SETUP_PROGRESS: 'workspace:setup_progress',
   WORKSPACE_COMMIT_MESSAGE_UPDATED: 'workspace:commit_message_updated',
+  // Remote server events
+  SERVER_LOGIN_URL: 'server:login_url',
+  SERVER_LOGIN_OUTPUT: 'server:login_output',
+  SERVER_LOGIN_DONE: 'server:login_done',
+  SERVER_STATUS_CHANGED: 'server:status_changed',
 } as const;
 
 export interface SubscribePayload {
@@ -183,6 +188,28 @@ export interface WorkspaceCommitMessageUpdatedPayload {
   workspaceId: string;
   taskId: string;
   commitMessage: string | null;
+}
+
+// Remote server payloads
+export interface ServerLoginUrlPayload {
+  serverId: string; // 'local' for the hub server
+  url: string;
+}
+
+export interface ServerLoginOutputPayload {
+  serverId: string;
+  data: string;
+}
+
+export interface ServerLoginDonePayload {
+  serverId: string;
+  success: boolean;
+}
+
+export interface ServerStatusChangedPayload {
+  serverId: string;
+  agentInstalled: boolean;
+  agentLoggedIn: boolean;
 }
 
 export type ClientEventType = typeof ClientEvents[keyof typeof ClientEvents];

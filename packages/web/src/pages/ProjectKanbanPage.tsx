@@ -8,6 +8,7 @@ import { UITaskStatus } from '@/components/task/types'
 import { toast } from 'sonner'
 import { adaptProject, adaptTaskForDetail, adaptTaskForList, mapTaskStatusToUI, mapUIStatusToTask } from '@/components/task/adapters'
 import { useProjects, useCreateProject } from '@/hooks/use-projects'
+import { useRemoteServers } from '@/hooks/use-remote-servers'
 import { useTasks, useCreateTask, useDeleteTask, useUpdateTaskStatus } from '@/hooks/use-tasks'
 import { useStartSession } from '@/hooks/use-sessions'
 import { apiClient } from '@/lib/api-client'
@@ -101,6 +102,7 @@ export function ProjectKanbanPage() {
   const [isCreateTaskOpen, setIsCreateTaskOpen] = useState(false)
   const [newProjectName, setNewProjectName] = useState('')
   const [newProjectRepoPath, setNewProjectRepoPath] = useState('')
+  const [newProjectServerId, setNewProjectServerId] = useState<string>('')
   const [newTaskTitle, setNewTaskTitle] = useState('')
   const [newTaskDescription, setNewTaskDescription] = useState('')
   const [newTaskProjectId, setNewTaskProjectId] = useState<string>('')
@@ -250,6 +252,9 @@ export function ProjectKanbanPage() {
     return adaptTaskForDetail(task, project)
   }, [effectiveSelectedTaskId, rawTasks, projects])
 
+  // === Remote Servers ===
+  const { data: remoteServers } = useRemoteServers()
+
   // === Mutations ===
   const createProject = useCreateProject()
   const createTask = useCreateTask(newTaskProjectId)
@@ -353,6 +358,7 @@ export function ProjectKanbanPage() {
     setIsCreateProjectOpen(false)
     setNewProjectName('')
     setNewProjectRepoPath('')
+    setNewProjectServerId('')
   }, [])
 
   const handleCloseTaskModal = useCallback(() => {
@@ -372,12 +378,13 @@ export function ProjectKanbanPage() {
       await createProject.mutateAsync({
         name: newProjectName.trim(),
         repoPath: newProjectRepoPath.trim(),
+        serverId: newProjectServerId || undefined,
       })
       handleCloseProjectModal()
     } catch {
       // mutation error 由 TanStack Query 管理
     }
-  }, [newProjectName, newProjectRepoPath, createProject, handleCloseProjectModal])
+  }, [newProjectName, newProjectRepoPath, newProjectServerId, createProject, handleCloseProjectModal])
 
   const startSession = useStartSession()
 
@@ -776,6 +783,21 @@ export function ProjectKanbanPage() {
                 className="w-full px-3 py-2 border border-neutral-200 rounded-lg text-sm focus:outline-none focus:border-neutral-400 transition-colors"
                 autoFocus
               />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-neutral-700 mb-1.5">
+                {t('Server')}
+              </label>
+              <select
+                value={newProjectServerId}
+                onChange={e => setNewProjectServerId(e.target.value)}
+                className="w-full px-3 py-2 border border-neutral-200 rounded-lg text-sm focus:outline-none focus:border-neutral-400 transition-colors bg-white"
+              >
+                <option value="">{t('本机 (Local)')}</option>
+                {(remoteServers ?? []).map(s => (
+                  <option key={s.id} value={s.id}>{s.name} ({s.host})</option>
+                ))}
+              </select>
             </div>
             <div>
               <label className="block text-sm font-medium text-neutral-700 mb-1.5">

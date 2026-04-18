@@ -33,6 +33,7 @@ interface CreateProjectInput {
   repoPath: string
   mainBranch?: string
   description?: string
+  serverId?: string
 }
 
 interface UpdateProjectInput {

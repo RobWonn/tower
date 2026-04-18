@@ -13,6 +13,8 @@ const ProfileSettingsPage = lazy(() => import('@/pages/ProfileSettingsPage').the
 const ProviderSettingsPage = lazy(() => import('@/pages/ProviderSettingsPage').then(m => ({ default: m.ProviderSettingsPage })))
 const NotificationSettingsPage = lazy(() => import('@/pages/NotificationSettingsPage').then(m => ({ default: m.NotificationSettingsPage })))
 const ProjectSettingsPage = lazy(() => import('@/pages/ProjectSettingsPage').then(m => ({ default: m.ProjectSettingsPage })))
+const RemoteServersSettingsPage = lazy(() => import('@/pages/RemoteServersSettingsPage').then(m => ({ default: m.RemoteServersSettingsPage })))
+const ProxySettingsPage = lazy(() => import('@/pages/ProxySettingsPage').then(m => ({ default: m.ProxySettingsPage })))
 
 function RouteLoadingFallback() {
   const { t } = useI18n()
@@ -90,6 +92,22 @@ const router = createBrowserRouter([
             element: (
               <Suspense fallback={<RouteLoadingFallback />}>
                 <ProjectSettingsPage />
+              </Suspense>
+            ),
+          },
+          {
+            path: 'servers',
+            element: (
+              <Suspense fallback={<RouteLoadingFallback />}>
+                <RemoteServersSettingsPage />
+              </Suspense>
+            ),
+          },
+          {
+            path: 'proxy',
+            element: (
+              <Suspense fallback={<RouteLoadingFallback />}>
+                <ProxySettingsPage />
               </Suspense>
             ),
           },

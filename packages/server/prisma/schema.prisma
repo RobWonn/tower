@@ -7,6 +7,24 @@ datasource db {
   url      = env("AGENT_TOWER_DATABASE_URL")
 }
 
+// 远程服务器
+model RemoteServer {
+  id              String    @id @default(uuid())
+  name            String
+  host            String
+  port            Int       @default(22)
+  username        String
+  authType        String    @default("key") // "key" | "password"
+  privateKeyPath  String?
+  password        String?   // AES-256-GCM encrypted
+  agentInstalled  Boolean   @default(false)
+  agentLoggedIn   Boolean   @default(false)
+  lastCheckedAt   DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  projects        Project[]
+}
+
 // 项目
 model Project {
   id          String   @id @default(uuid())
@@ -18,6 +36,8 @@ model Project {
   copyFiles     String?  // 逗号分隔的 glob/路径列表，worktree 创建后自动复制
   setupScript   String?  // 多行命令文本，worktree 创建后自动执行
   quickCommands String?  // JSON: [{ name, command }]，终端快捷命令
+  serverId    String?
+  server      RemoteServer? @relation(fields: [serverId], references: [id], onDelete: SetNull)
   archivedAt  DateTime?
   repoDeletedAt DateTime?
   createdAt   DateTime @default(now())
@@ -26,6 +46,7 @@ model Project {
 
   @@index([archivedAt])
   @@index([repoDeletedAt])
+  @@index([serverId])
 }
 
 // 任务
